@@ -274,12 +274,19 @@ public final class MediaDownloadManager: ObservableObject, Sendable {
         }
 
         let cachedURL = try await downloadMedia(from: url)
-        let downloadsDir = destinationDirectory
+        var downloadsDir = destinationDirectory
             ?? (FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
                 ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads"))
 
-        if !FileManager.default.fileExists(atPath: downloadsDir.path) {
-            try FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+        do {
+            if !FileManager.default.fileExists(atPath: downloadsDir.path) {
+                try FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+            }
+        } catch {
+            downloadsDir = FileManager.default.temporaryDirectory.appendingPathComponent("Downloads")
+            if !FileManager.default.fileExists(atPath: downloadsDir.path) {
+                try? FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+            }
         }
 
         var baseName: String
@@ -303,17 +310,26 @@ public final class MediaDownloadManager: ObservableObject, Sendable {
             throw MediaDownloadError.fileSystemError("Destination URL escapes target directory")
         }
 
-        // Collision avoidance: filename (1).ext
+        // Collision avoidance with atomic TOCTOU resilience:
         var counter = 1
         let nameWithoutExt = (baseName as NSString).deletingPathExtension
         let finalExt = (baseName as NSString).pathExtension
-        while FileManager.default.fileExists(atPath: targetURL.path) {
-            let numberedName = finalExt.isEmpty ? "\(nameWithoutExt) (\(counter))" : "\(nameWithoutExt) (\(counter)).\(finalExt)"
-            targetURL = downloadsDir.appendingPathComponent(numberedName)
-            counter += 1
-        }
+        while true {
+            while FileManager.default.fileExists(atPath: targetURL.path) {
+                let numberedName = finalExt.isEmpty ? "\(nameWithoutExt) (\(counter))" : "\(nameWithoutExt) (\(counter)).\(finalExt)"
+                targetURL = downloadsDir.appendingPathComponent(numberedName)
+                counter += 1
+            }
 
-        try FileManager.default.copyItem(at: cachedURL, to: targetURL)
+            do {
+                try FileManager.default.copyItem(at: cachedURL, to: targetURL)
+                break
+            } catch let error as NSError where error.domain == NSCocoaErrorDomain && (error.code == NSFileWriteFileExistsError || error.code == 516) {
+                let numberedName = finalExt.isEmpty ? "\(nameWithoutExt) (\(counter))" : "\(nameWithoutExt) (\(counter)).\(finalExt)"
+                targetURL = downloadsDir.appendingPathComponent(numberedName)
+                counter += 1
+            }
+        }
         return targetURL
     }
 

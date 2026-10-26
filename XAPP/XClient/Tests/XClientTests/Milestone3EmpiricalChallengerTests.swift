@@ -539,8 +539,8 @@ struct Milestone3EmpiricalChallengerTests {
         ChallengerMockURLProtocol.setHandler(for: testURL, statusCode: 200, data: Data(repeating: 0x42, count: 512))
 
         #if os(macOS)
-        let downloadsDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+        let downloadsDir = tempDir.appendingPathComponent("Downloads")
+        try FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
 
         // Attack payloads attempting to traverse outside Downloads
         let attackPayloads = [
@@ -557,7 +557,7 @@ struct Milestone3EmpiricalChallengerTests {
 
         for payload in attackPayloads {
             do {
-                let savedURL = try await manager.saveMediaToLocalDevice(from: testURL, customFilename: payload)
+                let savedURL = try await manager.saveMediaToLocalDevice(from: testURL, customFilename: payload, destinationDirectory: downloadsDir)
                 defer { try? FileManager.default.removeItem(at: savedURL) }
 
                 // Check if file escaped downloads directory
@@ -572,7 +572,7 @@ struct Milestone3EmpiricalChallengerTests {
 
         // Safe control payload must succeed and land within downloads
         let safeName = "safe_image_\(UUID().uuidString).jpg"
-        let safeSavedURL = try await manager.saveMediaToLocalDevice(from: testURL, customFilename: safeName)
+        let safeSavedURL = try await manager.saveMediaToLocalDevice(from: testURL, customFilename: safeName, destinationDirectory: downloadsDir)
         defer { try? FileManager.default.removeItem(at: safeSavedURL) }
         #expect(safeSavedURL.standardizedFileURL.path.hasPrefix(downloadsDir.standardizedFileURL.path))
         #expect(FileManager.default.fileExists(atPath: safeSavedURL.path))

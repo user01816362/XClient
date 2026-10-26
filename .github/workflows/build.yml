@@ -14,8 +14,8 @@ on:
       configuration:
         description: Build configuration
         type: choice
-        options: [Release, Debug]
-        default: Release
+        options: [release, debug]
+        default: release
       runner:
         description: Runner image
         type: choice
@@ -60,7 +60,7 @@ jobs:
       artifact: xkit-sdk-${{ steps.summary.outputs.configuration }}-${{ github.run_number }}
       channel: ${{ steps.summary.outputs.channel }}
     env:
-      CONFIGURATION: ${{ inputs.configuration || 'Release' }}
+      CONFIGURATION: ${{ inputs.configuration || 'release' }}
 
     steps:
       - name: Check out
@@ -112,7 +112,8 @@ jobs:
         run: |
           set -euo pipefail
           cd sdks/XKit
-          swift build --configuration ${{ env.CONFIGURATION }}
+          config_lower=$(echo "${CONFIGURATION}" | tr '[:upper:]' '[:lower:]')
+          swift build -c "$config_lower"
 
       - name: Test XClient (UI, Navigation, Concurrency Suites)
         run: |
@@ -130,7 +131,8 @@ jobs:
         run: |
           set -euo pipefail
           cd XAPP/XClient
-          swift build --configuration ${{ env.CONFIGURATION }}
+          config_lower=$(echo "${CONFIGURATION}" | tr '[:upper:]' '[:lower:]')
+          swift build -c "$config_lower"
 
       - name: Package Artifacts
         id: package

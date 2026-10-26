@@ -275,7 +275,7 @@ struct Milestone4EmpiricalChallengerTests {
             users: provider.users
         )
         // Pick target user who is not current user
-        let otherUser = provider.users.first(where: { $0.id != provider.currentUser.id })!
+        let otherUser = provider.users.values.first(where: { $0.id != provider.currentUser.id })!
         let vm = ProfileViewModel(userId: otherUser.id, service: service)
         await vm.loadProfile()
 

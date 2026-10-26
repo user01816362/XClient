@@ -278,7 +278,7 @@ struct Milestone5EmpiricalChallengerTests {
         #expect(bookmarkRemoved == true)
 
         let bookmarks = try await service.fetchBookmarks()
-        #expect(bookmarks.count >= 4)
+        #expect(bookmarks.data.count >= 4)
 
         // 8. Post deletion
         let postDeleted = try await service.deletePost(id: createdPost.id)
@@ -326,10 +326,26 @@ struct Milestone5EmpiricalChallengerTests {
 
         let settingsVM = SettingsViewModel()
         let palette = ColorPalette.resolve(preference: settingsVM.selectedTheme, systemScheme: .dark)
-        #expect(palette.brandPrimary != Color.clear)
+        #expect(palette.accent != Color.clear)
 
         let desktopRoot = DesktopRootViewSimulator()
         _ = desktopRoot.body
+    }
+
+    @MainActor
+    private func performConcurrentCheck(index: Int) async throws {
+        let service = XClientService()
+        let timeline = try await service.fetchHomeTimeline()
+        #expect(!timeline.isEmpty)
+
+        let user = try await service.fetchCurrentUser()
+        #expect(!user.id.isEmpty)
+
+        let post = try await service.createPost(text: "Concurrent post \(index)")
+        #expect(!post.id.isEmpty)
+
+        let deleted = try await service.deletePost(id: post.id)
+        #expect(deleted == true)
     }
 
     @Test("Challenge 3.2: Concurrent Verification Stress across Multiple Async Tasks")
@@ -338,19 +354,8 @@ struct Milestone5EmpiricalChallengerTests {
         // operations remain data-race free under high concurrent load
         try await withThrowingTaskGroup(of: Void.self) { group in
             for index in 0..<10 {
-                group.addTask { @MainActor in
-                    let service = XClientService()
-                    let timeline = try await service.fetchHomeTimeline()
-                    #expect(!timeline.isEmpty)
-
-                    let user = try await service.fetchCurrentUser()
-                    #expect(!user.id.isEmpty)
-
-                    let post = try await service.createPost(text: "Concurrent post \(index)")
-                    #expect(!post.id.isEmpty)
-
-                    let deleted = try await service.deletePost(id: post.id)
-                    #expect(deleted == true)
+                group.addTask {
+                    try await self.performConcurrentCheck(index: index)
                 }
             }
             try await group.waitForAll()
