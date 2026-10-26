@@ -1,0 +1,28 @@
+# Xcode & SwiftPM
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcworkspace/
+*.xcuserstate
+
+# Large Binaries, Dumps & SDK Payloads (>100MB blocked by GitHub)
+XAPP/Payload/
+sdks/iPhoneOS27.0.sdk/
+
+# Build Artifacts & Distribution
+dist/
+*.ipa
+*.zip
+*.xcarchive
+*.xcarchive.tar
+
+# macOS System Files
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Temporary & Logs
+/tmp/
+*.log

@@ -1,0 +1,56 @@
+field_categories:
+  evidence:
+    - name: status
+      description: One of confirmed, inference, unknown, or conflicting.
+      detail_level: brief
+    - name: primary_source
+      description: Direct official documentation, specification, source repository, or local artifact that supports the claim.
+      detail_level: detailed
+    - name: checked_date
+      description: Date the source was checked, because API and platform guidance changes.
+      detail_level: brief
+    - name: version_scope
+      description: X API version, X app build, Apple OS, Xcode, and Swift version to which the finding applies.
+      detail_level: moderate
+  api:
+    - name: endpoint_contract
+      description: HTTP method, path, request/response schema, pagination, errors, and source spec.
+      detail_level: detailed
+    - name: oauth_scopes
+      description: Required scopes and whether each is read, write, sensitive, or persistent access.
+      detail_level: detailed
+    - name: access_and_cost
+      description: Developer approval, app settings, account eligibility, pricing, limits, and usage constraints.
+      detail_level: detailed
+    - name: implementation_status
+      description: Not assessed, docs verified, access confirmed, tested, shipping, deferred, or rejected.
+      detail_level: moderate
+  apple:
+    - name: api_availability
+      description: Framework/API availability and deprecation state by Apple platform and OS version.
+      detail_level: detailed
+    - name: concurrency_safety
+      description: Sendable/actor isolation, Swift language mode, and unresolved compiler diagnostics.
+      detail_level: moderate
+  security_privacy:
+    - name: data_flow
+      description: Data collected, sent, cached, logged, retained, or deleted and by whom.
+      detail_level: detailed
+    - name: threat_and_mitigation
+      description: Threat scenario, impact, mitigation, residual risk, and verification evidence.
+      detail_level: detailed
+  dump_analysis:
+    - name: artifact_provenance
+      description: Binary/app version, hash, source, tool version, exact path and symbol/line reference.
+      detail_level: detailed
+    - name: observation_vs_inference
+      description: Literal static observation separated from inferred behavior and runtime confirmation.
+      detail_level: detailed
+uncertain:
+  - Current X API access pricing and tiers at implementation time
+  - Current X developer terms and third-party client restrictions
+  - Endpoint eligibility for the project’s developer app and test account
+  - Current official X Swift SDK availability
+  - Minimum OS and stable Swift/Xcode version at project start
+  - Whether specific first-party X app features have documented public endpoints
+  - Whether any dump finding corresponds to reachable runtime behavior

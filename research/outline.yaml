@@ -1,0 +1,33 @@
+topic: Native Swift X client and reusable X API SDK
+checked_date: 2026-10-15
+items:
+  - id: x_api_contract
+    name: Official X API v2 capabilities and endpoint eligibility
+    question: Which client features have current official endpoints, scopes, app access prerequisites, pricing, rate limits, and platform conditions?
+  - id: oauth_pkce
+    name: OAuth 2.0 PKCE native login and account lifecycle
+    question: What current X and Apple requirements apply to iOS, iPadOS, and macOS login, refresh, logout, callback, and multi-account storage?
+  - id: swift_sdk_landscape
+    name: Official and community Swift X API SDK landscape
+    question: Does X publish an official Swift SDK now, and which community clients are current, licensed, and suitable as references?
+  - id: apple_platform_architecture
+    name: Current Apple Swift and multiplatform architecture
+    question: What current Swift/Xcode/SwiftUI/Swift 6 APIs and platform availability should the project choose at implementation start?
+  - id: liquid_glass_hig
+    name: Apple HIG and Liquid Glass UI requirements
+    question: How should phone, iPad, and Mac experiences adapt navigation, windows, toolbars, accessibility, and visual effects?
+  - id: dump_gap_research
+    name: X 12.33 dump evidence and product gap discovery
+    question: Which observed app features are absent from documented API contracts, and what runtime/version evidence exists without turning internal symbols into public contracts?
+  - id: privacy_security
+    name: Privacy, telemetry, credentials, and client threat model
+    question: What data is stored/transmitted, how are tokens protected, and which policy/distribution requirements must be checked?
+  - id: testing_release
+    name: SDK contract testing and multi-platform release readiness
+    question: What tests and release gates prove endpoint behavior, account isolation, API compatibility, accessibility, and reproducibility?
+execution:
+  batch_size: 4
+  items_per_agent: 2
+  output_dir: ./results
+  sources_preference: primary_only
+  require_checked_date: true
