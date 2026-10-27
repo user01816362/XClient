@@ -267,11 +267,23 @@ public struct TwitterWebLoginView: View {
             var resolvedAvatarURL: URL? = nil
             var resolvedUserId = userId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-            // 1. Fetch genuine user profile from X GraphQL
-            if !resolvedScreenName.isEmpty {
+            let transport = URLSessionTransport()
+            let service = GraphQLTimelineService(transport: transport)
+
+            // 1. Primary: Query official verify_credentials.json using the authenticated cookies!
+            do {
+                let verifiedUser = try await service.verifyCredentials(authToken: authToken, csrfToken: ct0)
+                resolvedUserId = verifiedUser.id
+                resolvedScreenName = verifiedUser.username
+                resolvedDisplayName = verifiedUser.name
+                resolvedAvatarURL = verifiedUser.profileImageUrl.flatMap(URL.init)
+            } catch {
+                print("[TwitterWebLogin] verifyCredentials error: \(error)")
+            }
+
+            // 2. Secondary: If screen name is known, fetch via GraphQL UserByScreenName
+            if resolvedDisplayName == nil && !resolvedScreenName.isEmpty {
                 do {
-                    let transport = URLSessionTransport()
-                    let service = GraphQLTimelineService(transport: transport)
                     let liveUser = try await service.fetchUserByScreenName(
                         screenName: resolvedScreenName,
                         authToken: authToken,
@@ -282,16 +294,18 @@ public struct TwitterWebLoginView: View {
                     resolvedDisplayName = liveUser.name
                     resolvedAvatarURL = liveUser.profileImageUrl.flatMap(URL.init)
                 } catch {
-                    // Non-fatal, continue with extracted credentials
+                    print("[TwitterWebLogin] UserByScreenName error: \(error)")
                 }
             }
 
-            // 2. Default fallbacks if screen_name was not immediately extractable from DOM
+            // 3. Fallbacks if X API endpoints were blocked
             if resolvedUserId.isEmpty {
-                resolvedUserId = resolvedScreenName.isEmpty ? "user_\(UUID().uuidString.prefix(8))" : "user_\(resolvedScreenName.lowercased())"
+                resolvedUserId = (resolvedScreenName.isEmpty || resolvedScreenName == "x_user")
+                    ? "user_\(UUID().uuidString.prefix(8))"
+                    : "user_\(resolvedScreenName.lowercased())"
             }
             if resolvedScreenName.isEmpty {
-                resolvedScreenName = "x_user"
+                resolvedScreenName = "X User"
             }
             let displayName = resolvedDisplayName ?? resolvedScreenName
 

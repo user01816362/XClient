@@ -1,7 +1,7 @@
 import Foundation
 
 /// Structured errors emitted by XKit operations.
-public enum XKitError: Error, Sendable, Equatable, CustomStringConvertible {
+public enum XKitError: Error, Sendable, Equatable, CustomStringConvertible, LocalizedError {
     case invalidURL
     case networkError
     case httpError(statusCode: Int, data: Data?)
@@ -13,7 +13,7 @@ public enum XKitError: Error, Sendable, Equatable, CustomStringConvertible {
         case .invalidURL:
             return "Invalid URL"
         case .networkError:
-            return "Network error"
+            return "Network connection error"
         case .httpError(let statusCode, _):
             return "HTTP error with status code \(statusCode)"
         case .apiError(let title, let detail, _):
@@ -24,6 +24,10 @@ public enum XKitError: Error, Sendable, Equatable, CustomStringConvertible {
             }
             return "Rate limit exceeded"
         }
+    }
+
+    public var errorDescription: String? {
+        return self.description
     }
 }
 

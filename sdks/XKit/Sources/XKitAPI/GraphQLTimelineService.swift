@@ -18,6 +18,8 @@ public struct GraphQLTimelineService: Sendable {
     public static let tweetDetailPath = "/graphql/3XDB26fBve-MmjHaWTUZxA/TweetDetail"
     public static let userTweetsPath = "/graphql/WmvfySbQ0FeY1zk4HU_5ow/UserTweets"
     public static let userByScreenNamePath = "/i/api/graphql/oUZZZ8Oddwxs8Cd3iW3UEA/UserByScreenName"
+    public static let createTweetPath = "/i/api/graphql/jm93VcEnLxM7My_CL9C_EA/CreateTweet"
+    public static let verifyCredentialsPath = "/1.1/account/verify_credentials.json"
     public static let favoriteTweetPath = "/graphql/lI07N6Otwv1PhnEgXILMlh/FavoriteTweet"
     public static let unfavoriteTweetPath = "/graphql/ZYKfl-CLN6lAwQUMrxDqng/UnfavoriteTweet"
     public static let createRetweetPath = "/graphql/ojPdsfoiqIQdmvId3qWblo/CreateRetweet"
@@ -408,5 +410,113 @@ public struct GraphQLTimelineService: Sendable {
         let request = HTTPRequest(url: url, method: .post, headers: headers, body: bodyData)
         let response = try await transport.send(request: request)
         return (200..<300).contains(response.statusCode)
+    }
+
+    /// Verifies the current user session against X's official account credentials endpoint.
+    public func verifyCredentials(
+        authToken: String,
+        csrfToken: String
+    ) async throws -> XUser {
+        guard let url = URL(string: "https://api.twitter.com\(Self.verifyCredentialsPath)?include_email=true") else {
+            throw XKitError.invalidURL
+        }
+
+        let headers = ClientTransactionSigner.defaultWebSessionHeaders(
+            path: Self.verifyCredentialsPath,
+            method: "GET",
+            authToken: authToken,
+            csrfToken: csrfToken
+        )
+
+        let request = HTTPRequest(url: url, method: .get, headers: headers)
+        let response = try await transport.send(request: request)
+
+        guard (200..<300).contains(response.statusCode), let data = response.data else {
+            throw XKitError.httpError(statusCode: response.statusCode, data: response.data)
+        }
+
+        struct CredentialsPayload: Codable {
+            let id_str: String?
+            let id: Int64?
+            let screen_name: String
+            let name: String
+            let profile_image_url_https: String?
+            let description: String?
+            let verified: Bool?
+        }
+
+        let decoded = try JSONDecoder().decode(CredentialsPayload.self, from: data)
+        let userId = decoded.id_str ?? (decoded.id.map(String.init) ?? "usr_\(decoded.screen_name)")
+        return XUser(
+            id: userId,
+            name: decoded.name,
+            username: decoded.screen_name,
+            description: decoded.description,
+            verified: decoded.verified ?? false,
+            profileImageUrl: decoded.profile_image_url_https
+        )
+    }
+
+    /// Publishes a tweet via the real internal GraphQL CreateTweet endpoint.
+    public func createTweet(
+        text: String,
+        authToken: String,
+        csrfToken: String
+    ) async throws -> XPost {
+        guard let url = URL(string: "https://x.com\(Self.createTweetPath)") else {
+            throw XKitError.invalidURL
+        }
+
+        let body: [String: Any] = [
+            "variables": [
+                "tweet_text": text,
+                "dark_request": false,
+                "media": [
+                    "media_entities": [],
+                    "possibly_sensitive": false
+                ],
+                "semantic_annotation_ids": []
+            ],
+            "features": Self.standardFeatures,
+            "queryId": "jm93VcEnLxM7My_CL9C_EA"
+        ]
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+
+        let headers = ClientTransactionSigner.defaultWebSessionHeaders(
+            path: Self.createTweetPath,
+            method: "POST",
+            authToken: authToken,
+            csrfToken: csrfToken
+        )
+
+        let request = HTTPRequest(url: url, method: .post, headers: headers, body: bodyData)
+        let response = try await transport.send(request: request)
+
+        guard (200..<300).contains(response.statusCode), let data = response.data else {
+            throw XKitError.httpError(statusCode: response.statusCode, data: response.data)
+        }
+
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let dataDict = json["data"] as? [String: Any],
+           let createTweetResult = dataDict["create_tweet"] as? [String: Any],
+           let tweetResults = createTweetResult["tweet_results"] as? [String: Any],
+           let result = tweetResults["result"] as? [String: Any],
+           let restId = result["rest_id"] as? String {
+            return XPost(
+                id: restId,
+                text: text,
+                authorId: nil,
+                createdAt: Date(),
+                conversationId: restId
+            )
+        }
+
+        return XPost(
+            id: "\(Int(Date().timeIntervalSince1970 * 1000))",
+            text: text,
+            authorId: nil,
+            createdAt: Date(),
+            conversationId: nil
+        )
     }
 }

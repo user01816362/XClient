@@ -142,6 +142,12 @@ public final class SessionManager: ObservableObject, Sendable {
         userDefaults.set(false, forKey: isGuestKey)
         saveAccounts()
         isShowingLoginSheet = false
+
+        XClientService.shared.updateCredentials(
+            token: account.token,
+            currentUserId: account.id,
+            csrfToken: account.csrfToken
+        )
     }
 
     /// Logs in using official web session cookie credentials (`auth_token` and `ct0`).
@@ -217,6 +223,12 @@ public final class SessionManager: ObservableObject, Sendable {
         userDefaults.set(account.id, forKey: activeAccountIdKey)
         userDefaults.set(false, forKey: isGuestKey)
         isShowingAccountSwitcher = false
+
+        XClientService.shared.updateCredentials(
+            token: account.token,
+            currentUserId: account.id,
+            csrfToken: account.csrfToken
+        )
     }
 
     public func logout(id: String) {
