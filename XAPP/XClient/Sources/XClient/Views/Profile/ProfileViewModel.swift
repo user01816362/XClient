@@ -126,9 +126,9 @@ public final class ProfileViewModel: ObservableObject, Sendable {
         let isMock = activeService is MockClientService
         let activeAccount = SessionManager.shared.currentState.activeAccount
         let defaultId = isMock ? MockDataProvider.shared.currentUser.id : (activeAccount?.username ?? activeAccount?.id ?? "")
-        let resolvedId = userId ?? defaultId
+        let resolvedId = (userId == nil || userId?.isEmpty == true) ? defaultId : (userId ?? "")
         self.targetUserId = resolvedId
-        self.isCurrentUser = isMock ? (resolvedId == MockDataProvider.shared.currentUser.id) : (userId == nil || userId == activeAccount?.id || userId == activeAccount?.username)
+        self.isCurrentUser = isMock ? (resolvedId == MockDataProvider.shared.currentUser.id) : (userId == nil || userId?.isEmpty == true || userId == activeAccount?.id || userId == activeAccount?.username)
 
         if let initial = initialProfile {
             self.userProfile = initial
@@ -136,6 +136,28 @@ public final class ProfileViewModel: ObservableObject, Sendable {
             self.followersCount = initial.followersCount
             self.followingCount = initial.followingCount
             self.postsCount = initial.postsCount
+        } else if !isMock, self.isCurrentUser, let active = activeAccount {
+            let user = XUser(
+                id: active.id,
+                name: active.displayName,
+                username: active.username,
+                description: nil,
+                verified: false,
+                profileImageUrl: active.avatarURL?.absoluteString
+            )
+            let profile = UserProfile(
+                user: user,
+                headerImageUrl: nil,
+                bio: nil,
+                location: nil,
+                websiteUrl: nil,
+                joinedDate: active.createdAt,
+                followersCount: 0,
+                followingCount: 0,
+                postsCount: 0,
+                isFollowing: false
+            )
+            self.userProfile = profile
         }
     }
 
@@ -167,6 +189,19 @@ public final class ProfileViewModel: ObservableObject, Sendable {
 
     /// Loads user profile metadata and initializes the primary Posts feed.
     public func loadProfile() async {
+        let isMock = service is MockClientService
+        let activeAccount = SessionManager.shared.currentState.activeAccount
+
+        // Synchronize targetUserId if it was empty or viewing self
+        if !isMock && (targetUserId.isEmpty || isCurrentUser) {
+            if let active = activeAccount {
+                if targetUserId.isEmpty {
+                    targetUserId = active.username.isEmpty ? active.id : active.username
+                }
+                isCurrentUser = true
+            }
+        }
+
         guard !isLoadingProfile, !targetUserId.isEmpty else { return }
         isLoadingProfile = true
         errorMessage = nil
@@ -178,17 +213,18 @@ public final class ProfileViewModel: ObservableObject, Sendable {
                 resolvedProfile = cached
             } else {
                 let user = try await service.fetchUserProfile(id: targetUserId)
+                let existing = self.userProfile
                 resolvedProfile = UserProfile(
                     user: user,
-                    headerImageUrl: user.profileImageUrl.flatMap(URL.init),
-                    bio: user.description,
-                    location: nil,
-                    websiteUrl: nil,
-                    joinedDate: Date(),
-                    followersCount: 0,
-                    followingCount: 0,
-                    postsCount: 0,
-                    isFollowing: false
+                    headerImageUrl: user.profileImageUrl.flatMap(URL.init) ?? existing?.headerImageUrl,
+                    bio: user.description ?? existing?.bio,
+                    location: existing?.location,
+                    websiteUrl: existing?.websiteUrl,
+                    joinedDate: existing?.joinedDate ?? Date(),
+                    followersCount: existing?.followersCount ?? 0,
+                    followingCount: existing?.followingCount ?? 0,
+                    postsCount: existing?.postsCount ?? 0,
+                    isFollowing: existing?.isFollowing ?? false
                 )
             }
 
@@ -212,6 +248,18 @@ public final class ProfileViewModel: ObservableObject, Sendable {
 
     /// Pull-to-refresh execution. Reloads profile metadata and invalidates current subtab cache.
     public func refreshProfile() async {
+        let isMock = service is MockClientService
+        let activeAccount = SessionManager.shared.currentState.activeAccount
+
+        if !isMock && (targetUserId.isEmpty || isCurrentUser) {
+            if let active = activeAccount {
+                if targetUserId.isEmpty {
+                    targetUserId = active.username.isEmpty ? active.id : active.username
+                }
+                isCurrentUser = true
+            }
+        }
+
         guard !isRefreshing, !targetUserId.isEmpty else { return }
         isRefreshing = true
         errorMessage = nil
@@ -221,7 +269,7 @@ public final class ProfileViewModel: ObservableObject, Sendable {
             let existingProfile = self.userProfile
             let refreshedProfile = UserProfile(
                 user: user,
-                headerImageUrl: existingProfile?.headerImageUrl,
+                headerImageUrl: user.profileImageUrl.flatMap(URL.init) ?? existingProfile?.headerImageUrl,
                 bio: user.description ?? existingProfile?.bio,
                 location: existingProfile?.location,
                 websiteUrl: existingProfile?.websiteUrl,
@@ -265,6 +313,15 @@ public final class ProfileViewModel: ObservableObject, Sendable {
     }
 
     public func fetchFeed(for subtab: ProfileSubtab) async {
+        let isMock = service is MockClientService
+        let activeAccount = SessionManager.shared.currentState.activeAccount
+
+        if !isMock && targetUserId.isEmpty {
+            if let active = activeAccount {
+                targetUserId = active.username.isEmpty ? active.id : active.username
+            }
+        }
+
         guard !targetUserId.isEmpty else { return }
         isLoadingFeed = true
 
@@ -451,10 +508,45 @@ public final class ProfileViewModel: ObservableObject, Sendable {
 
     // MARK: - Lifecycle Management
     public func onAppear() {
-        if userProfile == nil && !isLoadingProfile {
+        let activeAccount = SessionManager.shared.currentState.activeAccount
+        let isMock = service is MockClientService
+
+        if !isMock && (targetUserId.isEmpty || isCurrentUser) {
+            if let active = activeAccount {
+                let resolved = active.username.isEmpty ? active.id : active.username
+                if targetUserId.isEmpty || (isCurrentUser && targetUserId != resolved) {
+                    targetUserId = resolved
+                }
+                isCurrentUser = true
+                if userProfile == nil {
+                    let user = XUser(
+                        id: active.id,
+                        name: active.displayName,
+                        username: active.username,
+                        description: nil,
+                        verified: false,
+                        profileImageUrl: active.avatarURL?.absoluteString
+                    )
+                    self.userProfile = UserProfile(
+                        user: user,
+                        headerImageUrl: nil,
+                        bio: nil,
+                        location: nil,
+                        websiteUrl: nil,
+                        joinedDate: active.createdAt,
+                        followersCount: 0,
+                        followingCount: 0,
+                        postsCount: 0,
+                        isFollowing: false
+                    )
+                }
+            }
+        }
+
+        if postsBySubtab[selectedSubtab] == nil && !isLoadingFeed && !targetUserId.isEmpty {
             Task { await loadProfile() }
-        } else if postsBySubtab[selectedSubtab] == nil && !isLoadingFeed {
-            Task { await fetchFeed(for: selectedSubtab) }
+        } else if userProfile == nil && !isLoadingProfile && !targetUserId.isEmpty {
+            Task { await loadProfile() }
         }
     }
 }

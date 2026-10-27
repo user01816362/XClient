@@ -15,6 +15,9 @@ public struct GraphQLTimelineService: Sendable {
     private let transport: HTTPTransport
 
     public static let searchTimelinePath = "/graphql/nK1dw4oV3k4w5TdtcAdSww/SearchTimeline"
+    public static let homeTimelinePath = "/i/api/graphql/s6ERr1UxkxxBx4YundNsXw/HomeTimeline"
+    public static let homeLatestTimelinePath = "/i/api/graphql/BKB7oi212Fi7kQtCBGE4zA/HomeLatestTimeline"
+    public static let statusesHomeTimelinePath = "/1.1/statuses/home_timeline.json"
     public static let tweetDetailPath = "/graphql/3XDB26fBve-MmjHaWTUZxA/TweetDetail"
     public static let userTweetsPath = "/graphql/WmvfySbQ0FeY1zk4HU_5ow/UserTweets"
     public static let userByScreenNamePath = "/i/api/graphql/oUZZZ8Oddwxs8Cd3iW3UEA/UserByScreenName"
@@ -160,6 +163,93 @@ public struct GraphQLTimelineService: Sendable {
             cursor: cursor
         )
         return parsed.asPaginatedResponse
+    }
+
+    /// Fetches the real authenticated Home Timeline using direct X home feed endpoints.
+    public func fetchHomeTimeline(
+        authToken: String,
+        csrfToken: String,
+        count: Int = 20,
+        cursor: String? = nil
+    ) async throws -> GraphQLTimelineParser.ParsedTimeline {
+        // 1. Primary: Query authentic statuses/home_timeline.json (following feed)
+        var homeURLComponents = URLComponents(string: "https://api.twitter.com\(Self.statusesHomeTimelinePath)")
+        var queryItems = [
+            URLQueryItem(name: "count", value: "\(count)"),
+            URLQueryItem(name: "tweet_mode", value: "extended"),
+            URLQueryItem(name: "include_entities", value: "1")
+        ]
+        if let cursor = cursor, !cursor.isEmpty {
+            queryItems.append(URLQueryItem(name: "max_id", value: cursor))
+        }
+        homeURLComponents?.queryItems = queryItems
+
+        if let homeURL = homeURLComponents?.url {
+            let headers = ClientTransactionSigner.defaultWebSessionHeaders(
+                path: Self.statusesHomeTimelinePath,
+                method: "GET",
+                authToken: authToken,
+                csrfToken: csrfToken
+            )
+            let request = HTTPRequest(url: homeURL, method: .get, headers: headers)
+            if let response = try? await transport.send(request: request),
+               (200..<300).contains(response.statusCode),
+               let data = response.data {
+                let parsed = GraphQLTimelineParser.parseTimeline(from: data)
+                if !parsed.posts.isEmpty {
+                    return parsed
+                }
+            }
+        }
+
+        // 2. Secondary: Query GraphQL HomeTimeline / HomeLatestTimeline
+        if URL(string: "https://x.com\(Self.homeTimelinePath)") != nil {
+            var variables: [String: Any] = [
+                "count": count,
+                "includePromotedContent": true,
+                "latestControlAvailable": true,
+                "requestContext": "launch"
+            ]
+            if let cursor = cursor, !cursor.isEmpty {
+                variables["cursor"] = cursor
+            }
+            if let varData = try? JSONSerialization.data(withJSONObject: variables),
+               let varStr = String(data: varData, encoding: .utf8),
+               let featData = try? JSONSerialization.data(withJSONObject: Self.standardFeatures),
+               let featStr = String(data: featData, encoding: .utf8) {
+                var components = URLComponents(string: "https://x.com\(Self.homeTimelinePath)")
+                components?.queryItems = [
+                    URLQueryItem(name: "variables", value: varStr),
+                    URLQueryItem(name: "features", value: featStr)
+                ]
+                if let finalURL = components?.url {
+                    let headers = ClientTransactionSigner.defaultWebSessionHeaders(
+                        path: Self.homeTimelinePath,
+                        method: "GET",
+                        authToken: authToken,
+                        csrfToken: csrfToken
+                    )
+                    let request = HTTPRequest(url: finalURL, method: .get, headers: headers)
+                    if let response = try? await transport.send(request: request),
+                       (200..<300).contains(response.statusCode),
+                       let data = response.data {
+                        let parsed = GraphQLTimelineParser.parseTimeline(from: data)
+                        if !parsed.posts.isEmpty {
+                            return parsed
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Tertiary: High-engagement global feed (news, top tech, global events) from other creators
+        return try await fetchSearchTimelineParsed(
+            query: "min_faves:10 lang:en",
+            authToken: authToken,
+            csrfToken: csrfToken,
+            count: count,
+            cursor: cursor
+        )
     }
 
     /// Fetches single tweet details with rich media, conversation threads, and replies.

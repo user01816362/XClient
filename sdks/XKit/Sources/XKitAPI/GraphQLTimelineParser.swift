@@ -58,7 +58,51 @@ public struct GraphQLTimelineParser: Sendable {
             return ParsedTimeline(posts: [decodedSingle.data], users: [:], nextCursor: nil)
         }
 
-        // 3. Dynamic JSON tree exploration
+        // 3. REST v1.1 status array fallback (e.g. from /1.1/statuses/home_timeline.json)
+        if let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            var posts: [XPost] = []
+            var users: [String: XUser] = [:]
+            for item in array {
+                guard let id = item["id_str"] as? String ?? (item["id"] as? Int64).map(String.init) else { continue }
+                let text = item["full_text"] as? String ?? item["text"] as? String ?? ""
+                let createdAtStr = item["created_at"] as? String
+                let createdAt = createdAtStr.flatMap(parseDate)
+                var authorId: String? = nil
+
+                if let userDict = item["user"] as? [String: Any],
+                   let userId = userDict["id_str"] as? String ?? (userDict["id"] as? Int64).map(String.init) {
+                    authorId = userId
+                    let screenName = userDict["screen_name"] as? String ?? ""
+                    let name = userDict["name"] as? String ?? screenName
+                    let avatar = userDict["profile_image_url_https"] as? String
+                    let bio = userDict["description"] as? String
+                    let verified = (userDict["verified"] as? Bool) ?? false
+
+                    let user = XUser(
+                        id: userId,
+                        name: name,
+                        username: screenName,
+                        description: bio,
+                        verified: verified,
+                        profileImageUrl: avatar
+                    )
+                    users[userId] = user
+                }
+
+                posts.append(XPost(
+                    id: id,
+                    text: text,
+                    authorId: authorId,
+                    createdAt: createdAt,
+                    conversationId: item["in_reply_to_status_id_str"] as? String
+                ))
+            }
+            if !posts.isEmpty {
+                return ParsedTimeline(posts: posts, users: users, nextCursor: nil)
+            }
+        }
+
+        // 4. Dynamic GraphQL JSON tree exploration
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return ParsedTimeline(posts: [], users: [:], nextCursor: nil)
         }

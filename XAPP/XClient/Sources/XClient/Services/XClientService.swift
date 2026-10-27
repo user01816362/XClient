@@ -254,11 +254,10 @@ public final class XClientService: XClientServiceProtocol, Sendable {
         case .authenticated(let account):
             if account.authType == .webSession {
                 let csrf = account.csrfToken ?? ""
-                // 1. Live Search Timeline with session cookies
+                // 1. Real Home Timeline using direct X endpoints (statuses/home_timeline.json + GraphQL HomeTimeline)
                 if !account.token.isEmpty {
                     do {
-                        let liveParsed = try await graphql.fetchSearchTimelineParsed(
-                            query: "min_faves:5 lang:en",
+                        let liveParsed = try await graphql.fetchHomeTimeline(
                             authToken: account.token,
                             csrfToken: csrf,
                             count: maxResults,
@@ -271,32 +270,11 @@ public final class XClientService: XClientServiceProtocol, Sendable {
                             return liveParsed.asPaginatedResponse
                         }
                     } catch {
-                        print("[XClientService] Live SearchTimeline fetch error: \(error)")
+                        print("[XClientService] Live HomeTimeline fetch error: \(error)")
                     }
                 }
 
-                // 2. User Tweets if real numeric ID is present
-                if !account.id.isEmpty && !account.id.starts(with: "user_") {
-                    do {
-                        let userTimeline = try await graphql.fetchUserTweets(
-                            userId: account.id,
-                            authToken: account.token,
-                            csrfToken: csrf,
-                            count: maxResults,
-                            cursor: paginationToken
-                        )
-                        for (authorId, user) in userTimeline.users {
-                            self.userCache[authorId] = user
-                        }
-                        if !userTimeline.posts.isEmpty {
-                            return userTimeline.asPaginatedResponse
-                        }
-                    } catch {
-                        print("[XClientService] Live UserTweets fetch error: \(error)")
-                    }
-                }
-
-                // 3. Fallback Feed: Avoid raw invalidURL / 401 error popups when X rate-limits or challenges live web requests
+                // 2. Fallback Feed: Avoid raw invalidURL / 401 error popups when X rate-limits or challenges live web requests
                 if !isMockSession {
                     let welcomePost = XPost(
                         id: "status_\(Int(Date().timeIntervalSince1970))",
@@ -402,7 +380,34 @@ public final class XClientService: XClientServiceProtocol, Sendable {
                 return user
             }
         } else if case .authenticated(let account) = session, account.authType == .webSession, let csrf = account.csrfToken {
+            // 1. If looking up current user, verify credentials directly from X
+            if id == account.username || id == account.id || id.isEmpty {
+                if let user = try? await graphql.verifyCredentials(authToken: account.token, csrfToken: csrf) {
+                    userCache[id] = user
+                    userCache[user.id] = user
+                    userCache[user.username] = user
+                    return user
+                }
+            }
+
+            // 2. Fetch by screen name
             if let user = try? await graphql.fetchUserByScreenName(screenName: id, authToken: account.token, csrfToken: csrf) {
+                userCache[id] = user
+                userCache[user.id] = user
+                userCache[user.username] = user
+                return user
+            }
+
+            // 3. Fallback to active account's known authentic data if matching
+            if id == account.username || id == account.id || id.isEmpty {
+                let user = XUser(
+                    id: account.id,
+                    name: account.displayName,
+                    username: account.username,
+                    description: nil,
+                    verified: false,
+                    profileImageUrl: account.avatarURL?.absoluteString
+                )
                 userCache[id] = user
                 userCache[user.id] = user
                 userCache[user.username] = user
@@ -424,6 +429,16 @@ public final class XClientService: XClientServiceProtocol, Sendable {
                 if id == currentUserId {
                     return MockDataProvider.shared.currentUser
                 }
+            }
+            if case .authenticated(let account) = session, (id == account.username || id == account.id || id.isEmpty) {
+                return XUser(
+                    id: account.id,
+                    name: account.displayName,
+                    username: account.username,
+                    description: nil,
+                    verified: false,
+                    profileImageUrl: account.avatarURL?.absoluteString
+                )
             }
             throw error
         }

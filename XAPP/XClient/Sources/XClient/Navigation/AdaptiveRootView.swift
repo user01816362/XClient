@@ -466,10 +466,17 @@ public struct BookmarksContainerView: View {
 }
 
 public struct ProfileContainerView: View {
+    @ObservedObject var sessionManager = SessionManager.shared
+
     public init() {}
 
     public var body: some View {
-        ProfileView(userId: nil)
+        if let active = sessionManager.currentState.activeAccount {
+            ProfileView(userId: active.username)
+                .id(active.id)
+        } else {
+            ProfileView(userId: nil)
+        }
     }
 }
 
