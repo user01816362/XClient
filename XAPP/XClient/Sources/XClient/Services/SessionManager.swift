@@ -1,5 +1,14 @@
 import Foundation
 import Combine
+import XKitTransport
+import XKitAPI
+
+/// Supported authentication modes for accounts in XClient.
+public enum AuthType: String, Codable, Hashable, Sendable {
+    case oauth2
+    case webSession
+    case guest
+}
 
 /// Represents an authenticated or stored user account in XClient.
 public struct Account: Identifiable, Codable, Hashable, Sendable {
@@ -8,6 +17,8 @@ public struct Account: Identifiable, Codable, Hashable, Sendable {
     public let displayName: String
     public let avatarURL: URL?
     public let token: String
+    public let csrfToken: String?
+    public let authType: AuthType
     public let isGuest: Bool
     public let createdAt: Date
 
@@ -17,6 +28,8 @@ public struct Account: Identifiable, Codable, Hashable, Sendable {
         displayName: String,
         avatarURL: URL? = nil,
         token: String,
+        csrfToken: String? = nil,
+        authType: AuthType = .oauth2,
         isGuest: Bool = false,
         createdAt: Date = Date()
     ) {
@@ -25,6 +38,8 @@ public struct Account: Identifiable, Codable, Hashable, Sendable {
         self.displayName = displayName
         self.avatarURL = avatarURL
         self.token = token
+        self.csrfToken = csrfToken
+        self.authType = authType
         self.isGuest = isGuest
         self.createdAt = createdAt
     }
@@ -61,6 +76,11 @@ public enum SessionState: Equatable, Sendable {
 
     public var activeAccount: Account? {
         if case .authenticated(let account) = self { return account }
+        return nil
+    }
+
+    public var activeGuestToken: String? {
+        if case .guest(let session) = self { return session.guestToken }
         return nil
     }
 }
@@ -110,6 +130,8 @@ public final class SessionManager: ObservableObject, Sendable {
                 displayName: "Liquid Glass",
                 avatarURL: URL(string: "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"),
                 token: "oauth_mock_liquidglass_2026",
+                csrfToken: nil,
+                authType: .oauth2,
                 isGuest: false
             )
             self.storedAccounts = [seedAccount]
@@ -133,11 +155,54 @@ public final class SessionManager: ObservableObject, Sendable {
         isShowingLoginSheet = false
     }
 
+    /// Logs in using official web session cookie credentials (`auth_token` and `ct0`).
+    public func loginWithCookieSession(
+        authToken: String,
+        ct0: String,
+        username: String,
+        displayName: String? = nil
+    ) {
+        let cleanUsername = username.replacingOccurrences(of: "@", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanAuth = authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanCsrf = ct0.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = (displayName?.isEmpty ?? true) ? cleanUsername.capitalized : (displayName ?? cleanUsername)
+
+        let account = Account(
+            id: "user_\(cleanUsername.lowercased())",
+            username: cleanUsername.lowercased(),
+            displayName: name,
+            avatarURL: URL(string: "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"),
+            token: cleanAuth,
+            csrfToken: cleanCsrf,
+            authType: .webSession,
+            isGuest: false
+        )
+        login(as: account)
+    }
+
+    /// Continues as an anonymous guest user, activating a live guest token asynchronously.
     public func continueAsGuest() {
-        let guestSession = GuestSession(guestToken: "gt_\(UUID().uuidString.prefix(12))")
-        currentState = .guest(guestSession)
+        let tempSession = GuestSession(guestToken: "gt_\(UUID().uuidString.prefix(12))")
+        currentState = .guest(tempSession)
         userDefaults.set(true, forKey: isGuestKey)
         userDefaults.removeObject(forKey: activeAccountIdKey)
+
+        Task {
+            await activateLiveGuestToken()
+        }
+    }
+
+    /// Queries the real Twitter guest token activation endpoint.
+    public func activateLiveGuestToken() async {
+        do {
+            let transport = URLSessionTransport()
+            let service = GraphQLTimelineService(transport: transport)
+            let liveToken = try await service.activateGuestToken()
+            let liveSession = GuestSession(guestToken: liveToken)
+            self.currentState = .guest(liveSession)
+        } catch {
+            // Retain existing guest session if activation was throttled or offline
+        }
     }
 
     public func switchToAccount(id: String) {

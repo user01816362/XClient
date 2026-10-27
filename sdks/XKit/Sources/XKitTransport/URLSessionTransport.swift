@@ -1,9 +1,21 @@
 import Foundation
 import XKitModels
 
-/// `HTTPTransport` implementation backed by `URLSession.shared`.
+/// `HTTPTransport` implementation backed by `URLSession` with configurable timeouts and cookie jar support.
 public struct URLSessionTransport: HTTPTransport, Sendable {
-    public init() {}
+    private let session: URLSession
+
+    public init(configuration: URLSessionConfiguration = .default) {
+        configuration.timeoutIntervalForRequest = 30.0
+        configuration.timeoutIntervalForResource = 60.0
+        configuration.httpCookieAcceptPolicy = .always
+        configuration.httpShouldSetCookies = true
+        self.session = URLSession(configuration: configuration)
+    }
+
+    public init(session: URLSession) {
+        self.session = session
+    }
 
     public func send(request: HTTPRequest) async throws -> HTTPResponse {
         var urlRequest = URLRequest(url: request.url)
@@ -14,7 +26,7 @@ public struct URLSessionTransport: HTTPTransport, Sendable {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: urlRequest)
+            let (data, response) = try await session.data(for: urlRequest)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw XKitError.networkError
             }

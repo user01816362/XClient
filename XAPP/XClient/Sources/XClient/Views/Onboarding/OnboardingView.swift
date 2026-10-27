@@ -1,13 +1,19 @@
 import SwiftUI
+import XKitTransport
+import XKitAPI
+import XKitModels
 
 /// View model managing onboarding and login UI interaction state.
 @MainActor
 public final class OnboardingViewModel: ObservableObject {
     @Published public var showingLoginModal: Bool = false
     @Published public var isCreatingAccount: Bool = false
+    @Published public var authModeTab: Int = 0 // 0: Standard, 1: Real X Platform Session
     @Published public var usernameInput: String = ""
     @Published public var displayNameInput: String = ""
     @Published public var passwordInput: String = ""
+    @Published public var authTokenInput: String = ""
+    @Published public var ct0Input: String = ""
     @Published public var isLoading: Bool = false
     @Published public var errorMessage: String? = nil
 
@@ -165,41 +171,95 @@ public struct LoginSheetView: View {
                 palette.secondaryBackground
                     .ignoresSafeArea()
 
-                VStack(spacing: 20) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(isCreatingAccount ? "Create your account" : "To get started, first enter your phone, email, or @username")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(palette.textPrimary)
+                VStack(spacing: 16) {
+                    Picker("Login Mode", selection: $viewModel.authModeTab) {
+                        Text("Standard").tag(0)
+                        Text("Real X Session").tag(1)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 16)
+                    .pickerStyle(.segmented)
+                    .padding(.top, 12)
 
-                    if isCreatingAccount {
-                        TextField("Display name", text: $viewModel.displayNameInput)
+                    if viewModel.authModeTab == 0 {
+                        // Standard / Demo Flow
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(isCreatingAccount ? "Create your account" : "To get started, enter your username or email")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(palette.textPrimary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if isCreatingAccount {
+                            TextField("Display name", text: $viewModel.displayNameInput)
+                                .textFieldStyle(.plain)
+                                .padding()
+                                .background(palette.background)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.borderDefault, lineWidth: 1))
+                        }
+
+                        TextField("Username or email", text: $viewModel.usernameInput)
+                            .textFieldStyle(.plain)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                            .autocorrectionDisabled()
+                            .padding()
+                            .background(palette.background)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.borderDefault, lineWidth: 1))
+
+                        SecureField("Password", text: $viewModel.passwordInput)
                             .textFieldStyle(.plain)
                             .padding()
                             .background(palette.background)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.borderDefault, lineWidth: 1))
+                    } else {
+                        // Real X Platform Session
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Connect Real X Account")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(palette.textPrimary)
+
+                            Text("Enter your X handle and web session cookies to connect directly to the live X API.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        TextField("@username", text: $viewModel.usernameInput)
+                            .textFieldStyle(.plain)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                            .autocorrectionDisabled()
+                            .padding()
+                            .background(palette.background)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.borderDefault, lineWidth: 1))
+
+                        SecureField("auth_token cookie", text: $viewModel.authTokenInput)
+                            .textFieldStyle(.plain)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                            .autocorrectionDisabled()
+                            .padding()
+                            .background(palette.background)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.borderDefault, lineWidth: 1))
+
+                        TextField("ct0 / csrf cookie", text: $viewModel.ct0Input)
+                            .textFieldStyle(.plain)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            #endif
+                            .autocorrectionDisabled()
+                            .padding()
+                            .background(palette.background)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.borderDefault, lineWidth: 1))
                     }
-
-                    TextField("Username or email", text: $viewModel.usernameInput)
-                        .textFieldStyle(.plain)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
-                        .autocorrectionDisabled()
-                        .padding()
-                        .background(palette.background)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.borderDefault, lineWidth: 1))
-
-                    SecureField("Password", text: $viewModel.passwordInput)
-                        .textFieldStyle(.plain)
-                        .padding()
-                        .background(palette.background)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.borderDefault, lineWidth: 1))
 
                     if let error = viewModel.errorMessage {
                         Text(error)
@@ -211,24 +271,28 @@ public struct LoginSheetView: View {
                     Spacer()
 
                     Button {
-                        submitAuth()
+                        if viewModel.authModeTab == 1 {
+                            submitLiveSessionAuth()
+                        } else {
+                            submitAuth()
+                        }
                     } label: {
                         HStack {
                             if viewModel.isLoading {
                                 ProgressView()
                                     .tint(palette.background)
                             } else {
-                                Text(isCreatingAccount ? "Sign up" : "Log in")
+                                Text(viewModel.authModeTab == 1 ? "Connect Live Account" : (isCreatingAccount ? "Sign up" : "Log in"))
                                     .font(.system(size: 16, weight: .bold))
                             }
                         }
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
-                        .background(viewModel.usernameInput.isEmpty ? palette.borderDefault : palette.textPrimary)
+                        .background(isSubmitDisabled ? palette.borderDefault : palette.textPrimary)
                         .foregroundStyle(palette.background)
                         .clipShape(Capsule())
                     }
-                    .disabled(viewModel.usernameInput.isEmpty || viewModel.isLoading)
+                    .disabled(isSubmitDisabled)
                     .buttonStyle(.plain)
                     .padding(.bottom, 24)
                 }
@@ -247,6 +311,14 @@ public struct LoginSheetView: View {
                 }
             }
         }
+    }
+
+    private var isSubmitDisabled: Bool {
+        if viewModel.isLoading { return true }
+        if viewModel.authModeTab == 1 {
+            return viewModel.usernameInput.isEmpty || viewModel.authTokenInput.isEmpty || viewModel.ct0Input.isEmpty
+        }
+        return viewModel.usernameInput.isEmpty
     }
 
     private func submitAuth() {
@@ -269,6 +341,49 @@ public struct LoginSheetView: View {
             sessionManager.login(as: account)
             viewModel.isLoading = false
             dismiss()
+        }
+    }
+
+    private func submitLiveSessionAuth() {
+        viewModel.isLoading = true
+        viewModel.errorMessage = nil
+
+        let sanitizedUser = viewModel.usernameInput.replacingOccurrences(of: "@", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let authToken = viewModel.authTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ct0 = viewModel.ct0Input.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        Task {
+            do {
+                let transport = URLSessionTransport()
+                let service = GraphQLTimelineService(transport: transport)
+                let liveUser = try await service.fetchUserByScreenName(
+                    screenName: sanitizedUser,
+                    authToken: authToken,
+                    csrfToken: ct0
+                )
+
+                let account = Account(
+                    id: liveUser.id,
+                    username: liveUser.username,
+                    displayName: liveUser.name,
+                    avatarURL: liveUser.profileImageUrl.flatMap(URL.init),
+                    token: authToken,
+                    csrfToken: ct0,
+                    authType: .webSession,
+                    isGuest: false
+                )
+                sessionManager.login(as: account)
+                viewModel.isLoading = false
+                dismiss()
+            } catch {
+                sessionManager.loginWithCookieSession(
+                    authToken: authToken,
+                    ct0: ct0,
+                    username: sanitizedUser
+                )
+                viewModel.isLoading = false
+                dismiss()
+            }
         }
     }
 }

@@ -196,6 +196,83 @@ struct XKitCLI {
                 assert(timeline.data.first?.text == "Liquid Glass post from GraphQL")
             }
 
+            // 10. GraphQLTimelineParser Nested Tree & NoteTweet Unwrapping
+            await runTest("GraphQLTimelineParser unwraps real Twitter nested instructions, note_tweets, and cursors") {
+                let nestedJSON = """
+                {
+                  "data": {
+                    "search_by_raw_query": {
+                      "search_timeline": {
+                        "timeline": {
+                          "instructions": [
+                            {
+                              "type": "TimelineAddEntries",
+                              "entries": [
+                                {
+                                  "entryId": "tweet-1888888888",
+                                  "content": {
+                                    "entryType": "TimelineTimelineItem",
+                                    "itemContent": {
+                                      "itemType": "TimelineTweet",
+                                      "tweet_results": {
+                                        "result": {
+                                          "__typename": "Tweet",
+                                          "rest_id": "1888888888",
+                                          "core": {
+                                            "user_results": {
+                                              "result": {
+                                                "rest_id": "usr_real_777",
+                                                "legacy": {
+                                                  "name": "Swift Expert",
+                                                  "screen_name": "swiftexpert",
+                                                  "profile_image_url_https": "https://pbs.twimg.com/profile_images/777/avatar.jpg"
+                                                }
+                                              }
+                                            }
+                                          },
+                                          "legacy": {
+                                            "full_text": "Short truncated preview...",
+                                            "created_at": "Mon Oct 26 12:00:00 +0000 2026",
+                                            "conversation_id_str": "1888888888"
+                                          },
+                                          "note_tweet": {
+                                            "note_tweet_results": {
+                                              "result": {
+                                                "text": "Full longform note tweet with liquid glass brilliance on iOS 17 and macOS!"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                },
+                                {
+                                  "entryId": "cursor-bottom-nextpage-12345",
+                                  "content": {
+                                    "entryType": "TimelineTimelineCursor",
+                                    "value": "cursor_token_page_2"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+                """
+                let parsed = GraphQLTimelineParser.parseTimeline(from: Data(nestedJSON.utf8))
+                assert(parsed.posts.count == 1, "Expected 1 post, got \(parsed.posts.count)")
+                assert(parsed.posts.first?.id == "1888888888")
+                // Verify note_tweet longform text unwrap
+                assert(parsed.posts.first?.text == "Full longform note tweet with liquid glass brilliance on iOS 17 and macOS!")
+                assert(parsed.users["usr_real_777"]?.username == "swiftexpert")
+                assert(parsed.users["usr_real_777"]?.name == "Swift Expert")
+                assert(parsed.nextCursor == "cursor_token_page_2")
+            }
+
             print("===========================================================")
             print("Test Summary: \(passed) passed, \(failed) failed")
             print("===========================================================")

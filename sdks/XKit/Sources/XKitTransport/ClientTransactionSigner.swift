@@ -63,6 +63,72 @@ public struct ClientTransactionSigner: Sendable {
         return headers
     }
 
+    /// Generates authenticated web session headers with cookie injection (`auth_token`, `ct0`), CSRF matching, and transaction ID.
+    public static func defaultWebSessionHeaders(
+        path: String = "",
+        method: String = "GET",
+        authToken: String? = nil,
+        csrfToken: String? = nil,
+        guestToken: String? = nil
+    ) -> [String: String] {
+        var headers: [String: String] = [
+            "accept": "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            "authorization": publicWebBearerToken,
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            "pragma": "no-cache",
+            "origin": "https://x.com",
+            "referer": "https://x.com",
+            "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+            "x-twitter-active-user": "yes",
+            "x-twitter-client-language": "en",
+            "x-twitter-auth-type": "OAuth2Session"
+        ]
+
+        if let guest = guestToken, !guest.isEmpty {
+            headers["x-guest-token"] = guest
+        }
+
+        var cookies: [String] = []
+        if let auth = authToken, !auth.isEmpty {
+            cookies.append("auth_token=\(auth)")
+        }
+        if let csrf = csrfToken, !csrf.isEmpty {
+            cookies.append("ct0=\(csrf)")
+            headers["x-csrf-token"] = csrf
+        }
+        if !cookies.isEmpty {
+            headers["cookie"] = cookies.joined(separator: "; ")
+        }
+
+        if !path.isEmpty {
+            headers["x-client-transaction-id"] = generateTransactionId(method: method, path: path)
+        }
+
+        return headers
+    }
+
+    /// Generates official OAuth 2.0 PKCE / User Context Bearer headers.
+    public static func defaultOAuthHeaders(
+        path: String = "",
+        method: String = "GET",
+        bearerToken: String
+    ) -> [String: String] {
+        var headers: [String: String] = [
+            "accept": "application/json",
+            "content-type": "application/json",
+            "user-agent": "XClient-LiquidGlass/1.0 (iOS 17.0; Apple)",
+            "authorization": bearerToken.starts(with: "Bearer ") ? bearerToken : "Bearer \(bearerToken)"
+        ]
+
+        if !path.isEmpty {
+            headers["x-client-transaction-id"] = generateTransactionId(method: method, path: path)
+        }
+
+        return headers
+    }
+
     /// Generates the `x-client-transaction-id` header using timestamp offset, method, path, and SHA-256 digest.
     public static func generateTransactionId(method: String, path: String, date: Date = Date()) -> String {
         let nowSeconds = Int64(date.timeIntervalSince1970)

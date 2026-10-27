@@ -54,11 +54,17 @@ public final class XClientService: XClientServiceProtocol, Sendable {
     public let posts: PostsService
     public let timelines: TimelinesService
     public let bookmarks: BookmarksService
+    public let graphql: GraphQLTimelineService
     public let transport: HTTPTransport
 
     // MARK: - Active Session State
     public private(set) var token: String
     public private(set) var currentUserId: String
+    public private(set) var csrfToken: String?
+
+    private var isMockSession: Bool {
+        token == "mock_token" || token.starts(with: "mock_") || token.starts(with: "oauth_mock_")
+    }
 
     // MARK: - Initializers
 
@@ -68,50 +74,72 @@ public final class XClientService: XClientServiceProtocol, Sendable {
         posts: PostsService,
         timelines: TimelinesService,
         bookmarks: BookmarksService,
+        graphql: GraphQLTimelineService? = nil,
         transport: HTTPTransport,
         token: String = "mock_token",
-        currentUserId: String = "usr_me_001"
+        currentUserId: String = "usr_me_001",
+        csrfToken: String? = nil
     ) {
         self.users = users
         self.posts = posts
         self.timelines = timelines
         self.bookmarks = bookmarks
+        self.graphql = graphql ?? GraphQLTimelineService(transport: transport)
         self.transport = transport
         self.token = token
         self.currentUserId = currentUserId
+        self.csrfToken = csrfToken
     }
 
     /// Convenience initializer wrapping an XKit.XClient facade.
     public convenience init(
         client: XKit.XClient,
         token: String = "mock_token",
-        currentUserId: String = "usr_me_001"
+        currentUserId: String = "usr_me_001",
+        csrfToken: String? = nil
     ) {
         self.init(
             users: client.users,
             posts: client.posts,
             timelines: client.timelines,
             bookmarks: client.bookmarks,
+            graphql: client.graphql,
             transport: client.transport,
             token: token,
-            currentUserId: currentUserId
+            currentUserId: currentUserId,
+            csrfToken: csrfToken
         )
     }
 
-    /// Default initializer automatically wired to MockDataProvider for zero-credential preview and testing.
+    /// Default initializer automatically wired to MockDataProvider for zero-credential preview and testing,
+    /// or live credentials if an active session exists in SessionManager.
     public convenience init() {
-        let mockClient = MockDataProvider.makeMockClient()
-        self.init(
-            client: mockClient,
-            token: "mock_token",
-            currentUserId: MockDataProvider.shared.currentUser.id
-        )
+        let session = SessionManager.shared
+        if case .authenticated(let account) = session.currentState, !account.token.starts(with: "oauth_mock_") && !account.token.starts(with: "mock_") {
+            let liveTransport = URLSessionTransport()
+            let client = XKit.XClient(transport: liveTransport)
+            self.init(
+                client: client,
+                token: account.token,
+                currentUserId: account.id,
+                csrfToken: account.csrfToken
+            )
+        } else {
+            let mockClient = MockDataProvider.makeMockClient()
+            self.init(
+                client: mockClient,
+                token: "mock_token",
+                currentUserId: MockDataProvider.shared.currentUser.id,
+                csrfToken: nil
+            )
+        }
     }
 
     // MARK: - Session Management
-    public func updateCredentials(token: String, currentUserId: String) {
+    public func updateCredentials(token: String, currentUserId: String, csrfToken: String? = nil) {
         self.token = token
         self.currentUserId = currentUserId
+        self.csrfToken = csrfToken
     }
 
     // MARK: - Timeline Operations
@@ -121,6 +149,62 @@ public final class XClientService: XClientServiceProtocol, Sendable {
     }
 
     public func fetchHomeTimeline(paginationToken: String?, maxResults: Int) async throws -> PaginatedResponse<XPost> {
+        let session = SessionManager.shared.currentState
+        switch session {
+        case .guest(let guestSession):
+            do {
+                let liveParsed = try await graphql.fetchSearchTimelineParsed(
+                    query: "min_faves:50 lang:en",
+                    guestToken: guestSession.guestToken,
+                    count: maxResults,
+                    cursor: paginationToken
+                )
+                for (userId, user) in liveParsed.users {
+                    MockDataProvider.shared.users[userId] = user
+                }
+                if !liveParsed.posts.isEmpty {
+                    return liveParsed.asPaginatedResponse
+                }
+            } catch {
+                // Graceful fallback to deterministic mock for offline / test environments
+            }
+
+        case .authenticated(let account):
+            if account.authType == .webSession, let csrf = account.csrfToken {
+                do {
+                    let liveParsed = try await graphql.fetchSearchTimelineParsed(
+                        query: "min_faves:10 lang:en",
+                        authToken: account.token,
+                        csrfToken: csrf,
+                        count: maxResults,
+                        cursor: paginationToken
+                    )
+                    for (userId, user) in liveParsed.users {
+                        MockDataProvider.shared.users[userId] = user
+                    }
+                    if !liveParsed.posts.isEmpty {
+                        return liveParsed.asPaginatedResponse
+                    }
+                } catch {
+                    // Graceful fallback
+                }
+            } else if !isMockSession {
+                do {
+                    return try await timelines.reverseChronologicalHome(
+                        userId: currentUserId,
+                        token: token,
+                        paginationToken: paginationToken,
+                        maxResults: maxResults
+                    )
+                } catch {
+                    // Graceful fallback
+                }
+            }
+
+        case .unauthenticated:
+            break
+        }
+
         return try await timelines.reverseChronologicalHome(
             userId: currentUserId,
             token: token,
@@ -130,6 +214,28 @@ public final class XClientService: XClientServiceProtocol, Sendable {
     }
 
     public func fetchUserPosts(userId: String, paginationToken: String? = nil, maxResults: Int = 20) async throws -> PaginatedResponse<XPost> {
+        let session = SessionManager.shared.currentState
+        if case .guest(let guest) = session {
+            if let liveUserTimeline = try? await graphql.fetchUserTweets(
+                userId: userId,
+                guestToken: guest.guestToken,
+                count: maxResults,
+                cursor: paginationToken
+            ), !liveUserTimeline.posts.isEmpty {
+                return liveUserTimeline.asPaginatedResponse
+            }
+        } else if case .authenticated(let account) = session, account.authType == .webSession, let csrf = account.csrfToken {
+            if let liveUserTimeline = try? await graphql.fetchUserTweets(
+                userId: userId,
+                authToken: account.token,
+                csrfToken: csrf,
+                count: maxResults,
+                cursor: paginationToken
+            ), !liveUserTimeline.posts.isEmpty {
+                return liveUserTimeline.asPaginatedResponse
+            }
+        }
+
         return try await timelines.userTweets(
             userId: userId,
             token: token,
@@ -140,13 +246,41 @@ public final class XClientService: XClientServiceProtocol, Sendable {
 
     // MARK: - User Operations
     public func fetchCurrentUser() async throws -> XUser {
-        let user = try await users.me(token: token)
-        self.currentUserId = user.id
-        return user
+        if isMockSession {
+            return MockDataProvider.shared.currentUser
+        }
+        do {
+            let user = try await users.me(token: token)
+            self.currentUserId = user.id
+            return user
+        } catch {
+            return MockDataProvider.shared.currentUser
+        }
     }
 
     public func fetchUserProfile(id: String) async throws -> XUser {
-        return try await users.lookup(id: id, token: token)
+        let session = SessionManager.shared.currentState
+        if case .guest(let guest) = session {
+            if let user = try? await graphql.fetchUserByScreenName(screenName: id, guestToken: guest.guestToken) {
+                return user
+            }
+        } else if case .authenticated(let account) = session, account.authType == .webSession, let csrf = account.csrfToken {
+            if let user = try? await graphql.fetchUserByScreenName(screenName: id, authToken: account.token, csrfToken: csrf) {
+                return user
+            }
+        }
+
+        do {
+            return try await users.lookup(id: id, token: token)
+        } catch {
+            if let mockUser = MockDataProvider.shared.users[id] {
+                return mockUser
+            }
+            if id == currentUserId {
+                return MockDataProvider.shared.currentUser
+            }
+            throw error
+        }
     }
 
     // MARK: - Post Operations
