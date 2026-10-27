@@ -213,7 +213,7 @@ public final class TimelineViewModel: ObservableObject, Sendable {
 
     // MARK: - Optimistic Social Actions
 
-    /// Toggles like state optimistically and synchronizes with service/mock store.
+    /// Toggles like state optimistically and synchronizes with live X service or mock test harness.
     public func toggleLike(for post: PostItem) {
         let targetId = post.id
         guard let index = posts.firstIndex(where: { $0.id == targetId }) else { return }
@@ -223,8 +223,25 @@ public final class TimelineViewModel: ObservableObject, Sendable {
         posts[index].isLiked = newState
         posts[index].likeCount = max(0, posts[index].likeCount + (newState ? 1 : -1))
 
-        // Synchronize in MockDataProvider
-        MockDataProvider.shared.toggleLike(postId: targetId, forceState: newState)
+        if service is MockClientService {
+            MockDataProvider.shared.toggleLike(postId: targetId, forceState: newState)
+        } else if let concreteService = service as? XClientService, let csrf = concreteService.csrfToken {
+            Task {
+                if newState {
+                    _ = try? await concreteService.graphql.likeTweet(
+                        tweetId: targetId,
+                        authToken: concreteService.token,
+                        csrfToken: csrf
+                    )
+                } else {
+                    _ = try? await concreteService.graphql.unlikeTweet(
+                        tweetId: targetId,
+                        authToken: concreteService.token,
+                        csrfToken: csrf
+                    )
+                }
+            }
+        }
     }
 
     /// Toggles bookmark state optimistically and invokes service mutation.
@@ -237,8 +254,9 @@ public final class TimelineViewModel: ObservableObject, Sendable {
         posts[index].isBookmarked = newState
         posts[index].bookmarkCount = max(0, posts[index].bookmarkCount + (newState ? 1 : -1))
 
-        // Synchronize in MockDataProvider
-        MockDataProvider.shared.toggleBookmark(postId: targetId, forceState: newState)
+        if service is MockClientService {
+            MockDataProvider.shared.toggleBookmark(postId: targetId, forceState: newState)
+        }
 
         // Asynchronous service dispatch with rollback on error
         Task {
@@ -258,7 +276,7 @@ public final class TimelineViewModel: ObservableObject, Sendable {
         }
     }
 
-    /// Toggles repost state optimistically.
+    /// Toggles repost state optimistically and notifies service.
     public func toggleRepost(for post: PostItem) {
         let targetId = post.id
         guard let index = posts.firstIndex(where: { $0.id == targetId }) else { return }
@@ -268,7 +286,17 @@ public final class TimelineViewModel: ObservableObject, Sendable {
         posts[index].isReposted = newState
         posts[index].repostCount = max(0, posts[index].repostCount + (newState ? 1 : -1))
 
-        MockDataProvider.shared.toggleRepost(postId: targetId)
+        if service is MockClientService {
+            MockDataProvider.shared.toggleRepost(postId: targetId)
+        } else if let concreteService = service as? XClientService, let csrf = concreteService.csrfToken {
+            Task {
+                _ = try? await concreteService.graphql.retweet(
+                    tweetId: targetId,
+                    authToken: concreteService.token,
+                    csrfToken: csrf
+                )
+            }
+        }
     }
 
     /// Deletes a post from feed and notifies backend service.
@@ -278,7 +306,6 @@ public final class TimelineViewModel: ObservableObject, Sendable {
         unreadBuffer.removeAll { $0.id == targetId }
         unreadCount = unreadBuffer.count
 
-        MockDataProvider.shared.deletePost(id: targetId)
         Task {
             _ = try? await service.deletePost(id: targetId)
         }
@@ -335,18 +362,24 @@ public final class TimelineViewModel: ObservableObject, Sendable {
     }
 
     private func makePostItem(from xPost: XPost) -> PostItem {
-        // Retain existing rich mock fixtures if available
-        if let existing = MockDataProvider.shared.postItems.first(where: { $0.id == xPost.id }) {
-            return existing
+        let authorId = xPost.authorId ?? "usr_unknown"
+        let resolvedAuthor: XUser
+        if let concreteService = service as? XClientService, let cached = concreteService.userCache[authorId] {
+            resolvedAuthor = cached
+        } else if let mockService = service as? MockClientService, let cached = mockService.users[authorId] {
+            resolvedAuthor = cached
+        } else {
+            resolvedAuthor = XUser(
+                id: authorId,
+                name: authorId.hasPrefix("usr_") ? "User" : "@\(authorId)",
+                username: authorId.hasPrefix("usr_") ? "user" : authorId
+            )
         }
-        let author = MockDataProvider.shared.users[xPost.authorId ?? ""] ?? XUser(
-            id: xPost.authorId ?? "usr_unknown",
-            name: "User",
-            username: "user"
-        )
-        var item = PostItem(post: xPost, author: author)
-        item.isLiked = MockDataProvider.shared.userLikes[MockDataProvider.shared.currentUser.id]?.contains(xPost.id) ?? false
-        item.isBookmarked = MockDataProvider.shared.bookmarks.contains(where: { $0.id == xPost.id })
+
+        var item = PostItem(post: xPost, author: resolvedAuthor)
+        if let mockService = service as? MockClientService {
+            item.isBookmarked = mockService.bookmarkedPostIds.contains(xPost.id)
+        }
         return item
     }
 }

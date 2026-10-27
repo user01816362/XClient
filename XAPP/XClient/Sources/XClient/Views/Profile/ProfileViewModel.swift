@@ -119,12 +119,16 @@ public final class ProfileViewModel: ObservableObject, Sendable {
         navigationState: AppNavigationState? = nil,
         initialProfile: UserProfile? = nil
     ) {
-        self.service = service ?? XClientService()
+        let activeService = service ?? XClientService()
+        self.service = activeService
         self.navigationState = navigationState
 
-        let resolvedId = userId ?? MockDataProvider.shared.currentUser.id
+        let isMock = activeService is MockClientService
+        let activeAccount = SessionManager.shared.currentState.activeAccount
+        let defaultId = isMock ? MockDataProvider.shared.currentUser.id : (activeAccount?.username ?? activeAccount?.id ?? "")
+        let resolvedId = userId ?? defaultId
         self.targetUserId = resolvedId
-        self.isCurrentUser = (resolvedId == MockDataProvider.shared.currentUser.id)
+        self.isCurrentUser = isMock ? (resolvedId == MockDataProvider.shared.currentUser.id) : (userId == nil || userId == activeAccount?.id || userId == activeAccount?.username)
 
         if let initial = initialProfile {
             self.userProfile = initial
@@ -163,38 +167,39 @@ public final class ProfileViewModel: ObservableObject, Sendable {
 
     /// Loads user profile metadata and initializes the primary Posts feed.
     public func loadProfile() async {
-        guard !isLoadingProfile else { return }
+        guard !isLoadingProfile, !targetUserId.isEmpty else { return }
         isLoadingProfile = true
         errorMessage = nil
 
         do {
             // 1. Resolve User Profile
             let resolvedProfile: UserProfile
-            if let cached = MockDataProvider.shared.userProfiles[targetUserId] {
+            if service is MockClientService, let cached = MockDataProvider.shared.userProfiles[targetUserId] {
                 resolvedProfile = cached
             } else {
                 let user = try await service.fetchUserProfile(id: targetUserId)
                 resolvedProfile = UserProfile(
                     user: user,
-                    headerImageUrl: URL(string: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&h=400&q=80"),
+                    headerImageUrl: user.profileImageUrl.flatMap(URL.init),
                     bio: user.description,
                     location: nil,
                     websiteUrl: nil,
                     joinedDate: Date(),
-                    followersCount: 120,
-                    followingCount: 84,
-                    postsCount: 12,
+                    followersCount: 0,
+                    followingCount: 0,
+                    postsCount: 0,
                     isFollowing: false
                 )
             }
 
             self.userProfile = resolvedProfile
-            MockDataProvider.shared.userProfiles[targetUserId] = resolvedProfile
+            if service is MockClientService {
+                MockDataProvider.shared.userProfiles[targetUserId] = resolvedProfile
+            }
             self.isFollowing = resolvedProfile.isFollowing
             self.followersCount = resolvedProfile.followersCount
             self.followingCount = resolvedProfile.followingCount
             self.postsCount = resolvedProfile.postsCount
-            self.isCurrentUser = (resolvedProfile.user.id == MockDataProvider.shared.currentUser.id)
             self.isLoadingProfile = false
 
             // 2. Fetch Active Subtab Feed
@@ -207,38 +212,27 @@ public final class ProfileViewModel: ObservableObject, Sendable {
 
     /// Pull-to-refresh execution. Reloads profile metadata and invalidates current subtab cache.
     public func refreshProfile() async {
-        guard !isRefreshing else { return }
+        guard !isRefreshing, !targetUserId.isEmpty else { return }
         isRefreshing = true
         errorMessage = nil
 
         do {
-            // Re-fetch profile
-            if let cached = MockDataProvider.shared.userProfiles[targetUserId] {
-                self.userProfile = cached
-                self.isFollowing = cached.isFollowing
-                self.followersCount = cached.followersCount
-                self.followingCount = cached.followingCount
-                self.postsCount = cached.postsCount
-            } else {
-                let user = try await service.fetchUserProfile(id: targetUserId)
-                let existingProfile = self.userProfile
-                let followers = self.followersCount
-                let following = self.followingCount
-                let posts = self.postsCount
-                let followingState = self.isFollowing
-                let refreshedProfile = UserProfile(
-                    user: user,
-                    headerImageUrl: existingProfile?.headerImageUrl ?? URL(string: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&h=400&q=80"),
-                    bio: user.description ?? existingProfile?.bio,
-                    location: existingProfile?.location,
-                    websiteUrl: existingProfile?.websiteUrl,
-                    joinedDate: existingProfile?.joinedDate ?? Date(),
-                    followersCount: followers,
-                    followingCount: following,
-                    postsCount: posts,
-                    isFollowing: followingState
-                )
-                self.userProfile = refreshedProfile
+            let user = try await service.fetchUserProfile(id: targetUserId)
+            let existingProfile = self.userProfile
+            let refreshedProfile = UserProfile(
+                user: user,
+                headerImageUrl: existingProfile?.headerImageUrl,
+                bio: user.description ?? existingProfile?.bio,
+                location: existingProfile?.location,
+                websiteUrl: existingProfile?.websiteUrl,
+                joinedDate: existingProfile?.joinedDate ?? Date(),
+                followersCount: self.followersCount,
+                followingCount: self.followingCount,
+                postsCount: self.postsCount,
+                isFollowing: self.isFollowing
+            )
+            self.userProfile = refreshedProfile
+            if service is MockClientService {
                 MockDataProvider.shared.userProfiles[targetUserId] = refreshedProfile
             }
 
@@ -271,6 +265,7 @@ public final class ProfileViewModel: ObservableObject, Sendable {
     }
 
     public func fetchFeed(for subtab: ProfileSubtab) async {
+        guard !targetUserId.isEmpty else { return }
         isLoadingFeed = true
 
         let items: [PostItem]
@@ -278,13 +273,9 @@ public final class ProfileViewModel: ObservableObject, Sendable {
         case .posts:
             if let response = try? await service.fetchUserPosts(userId: targetUserId, paginationToken: nil, maxResults: 50),
                !response.data.isEmpty {
+                let author = self.userProfile?.user ?? XUser(id: targetUserId, name: targetUserId, username: targetUserId)
                 items = response.data.map { xPost in
-                    if let existing = MockDataProvider.shared.postItems.first(where: { $0.id == xPost.id }) {
-                        return existing
-                    }
-                    let authorId = xPost.authorId ?? self.targetUserId
-                    let author = MockDataProvider.shared.users[authorId] ?? (self.userProfile?.user ?? MockDataProvider.shared.currentUser)
-                    return PostItem(
+                    PostItem(
                         id: xPost.id,
                         text: xPost.text,
                         author: author,
@@ -292,19 +283,34 @@ public final class ProfileViewModel: ObservableObject, Sendable {
                         mediaAttachments: []
                     )
                 }
-            } else {
+            } else if service is MockClientService {
                 items = MockDataProvider.shared.postsForUser(id: targetUserId)
+            } else {
+                items = []
             }
         case .replies:
-            items = MockDataProvider.shared.repliesForUser(id: targetUserId)
+            if service is MockClientService {
+                items = MockDataProvider.shared.repliesForUser(id: targetUserId)
+            } else {
+                items = []
+            }
         case .media:
-            let mediaPosts = MockDataProvider.shared.mediaForUser(id: targetUserId)
-            items = mediaPosts
-            self.mediaItems = mediaPosts.flatMap { post in
-                post.mediaAttachments.map { ProfileMediaItem(attachment: $0, post: post) }
+            if service is MockClientService {
+                let mediaPosts = MockDataProvider.shared.mediaForUser(id: targetUserId)
+                items = mediaPosts
+                self.mediaItems = mediaPosts.flatMap { post in
+                    post.mediaAttachments.map { ProfileMediaItem(attachment: $0, post: post) }
+                }
+            } else {
+                items = []
+                self.mediaItems = []
             }
         case .likes:
-            items = MockDataProvider.shared.likesForUser(id: targetUserId)
+            if service is MockClientService {
+                items = MockDataProvider.shared.likesForUser(id: targetUserId)
+            } else {
+                items = []
+            }
         }
 
         self.postsBySubtab[subtab] = items
@@ -331,7 +337,9 @@ public final class ProfileViewModel: ObservableObject, Sendable {
             profile.isFollowing = newState
             profile.followersCount = newCount
             self.userProfile = profile
-            MockDataProvider.shared.userProfiles[targetUserId] = profile
+            if service is MockClientService {
+                MockDataProvider.shared.userProfiles[targetUserId] = profile
+            }
         }
 
         // 2. Service Dispatch with Rollback Guard
@@ -350,7 +358,9 @@ public final class ProfileViewModel: ObservableObject, Sendable {
                         profile.isFollowing = previousState
                         profile.followersCount = previousCount
                         self.userProfile = profile
-                        MockDataProvider.shared.userProfiles[self.targetUserId] = profile
+                        if self.service is MockClientService {
+                            MockDataProvider.shared.userProfiles[self.targetUserId] = profile
+                        }
                     }
                     self.errorMessage = "Failed to update follow status. Please try again."
                 }
@@ -360,14 +370,12 @@ public final class ProfileViewModel: ObservableObject, Sendable {
 
     // MARK: - Social Action Mutations
 
-    /// Toggles like state on a post across subtab feeds and syncs with MockDataProvider.
+    /// Toggles like state on a post across subtab feeds.
     public func toggleLike(for post: PostItem) {
         let targetId = post.id
-        let newState: Bool
-        if MockDataProvider.shared.postItems.contains(where: { $0.id == targetId }) {
-            newState = MockDataProvider.shared.toggleLike(postId: targetId)
-        } else {
-            newState = !post.isLiked
+        let newState = !post.isLiked
+        if service is MockClientService {
+            _ = MockDataProvider.shared.toggleLike(postId: targetId)
         }
 
         // Mutate across all cached subtab feeds
@@ -384,11 +392,9 @@ public final class ProfileViewModel: ObservableObject, Sendable {
     /// Toggles repost state on a post.
     public func toggleRepost(for post: PostItem) {
         let targetId = post.id
-        let newState: Bool
-        if MockDataProvider.shared.postItems.contains(where: { $0.id == targetId }) {
-            newState = MockDataProvider.shared.toggleRepost(postId: targetId)
-        } else {
-            newState = !post.isReposted
+        let newState = !post.isReposted
+        if service is MockClientService {
+            MockDataProvider.shared.toggleRepost(postId: targetId)
         }
 
         for (subtab, feed) in postsBySubtab {
@@ -404,11 +410,9 @@ public final class ProfileViewModel: ObservableObject, Sendable {
     /// Toggles bookmark state on a post.
     public func toggleBookmark(for post: PostItem) {
         let targetId = post.id
-        let newState: Bool
-        if MockDataProvider.shared.postItems.contains(where: { $0.id == targetId }) {
-            newState = MockDataProvider.shared.toggleBookmark(postId: targetId)
-        } else {
-            newState = !post.isBookmarked
+        let newState = !post.isBookmarked
+        if service is MockClientService {
+            _ = MockDataProvider.shared.toggleBookmark(postId: targetId)
         }
 
         for (subtab, feed) in postsBySubtab {
@@ -436,7 +440,9 @@ public final class ProfileViewModel: ObservableObject, Sendable {
             postsBySubtab[subtab] = feed.filter { $0.id != targetId }
         }
         mediaItems.removeAll { $0.post.id == targetId }
-        MockDataProvider.shared.deletePost(id: targetId)
+        if service is MockClientService {
+            MockDataProvider.shared.deletePost(id: targetId)
+        }
 
         Task {
             _ = try? await service.deletePost(id: targetId)

@@ -217,7 +217,18 @@ public final class ComposeViewModel: ObservableObject, Sendable {
     ) {
         self.service = service ?? XClientService()
         self.draftStorage = draftStorage
-        self.currentUser = currentUser ?? MockDataProvider.shared.currentUser
+        if let user = currentUser {
+            self.currentUser = user
+        } else if let active = SessionManager.shared.currentState.activeAccount {
+            self.currentUser = XUser(
+                id: active.id,
+                name: active.displayName,
+                username: active.username,
+                profileImageUrl: active.avatarURL?.absoluteString
+            )
+        } else {
+            self.currentUser = MockDataProvider.shared.currentUser
+        }
 
         if restoreActiveDraftOnLaunch, let activeDraft = draftStorage.loadActiveDraft(), !activeDraft.nodes.isEmpty {
             self.nodes = activeDraft.nodes

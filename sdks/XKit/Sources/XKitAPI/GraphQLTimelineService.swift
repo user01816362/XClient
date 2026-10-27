@@ -356,6 +356,33 @@ public struct GraphQLTimelineService: Sendable {
         return (200..<300).contains(response.statusCode)
     }
 
+    /// Unlikes / unfavorites a tweet using an authenticated session.
+    public func unlikeTweet(
+        tweetId: String,
+        authToken: String,
+        csrfToken: String
+    ) async throws -> Bool {
+        guard let url = URL(string: "https://api.x.com\(Self.unfavoriteTweetPath)") else {
+            throw XKitError.invalidURL
+        }
+
+        let body: [String: Any] = [
+            "variables": ["tweet_id": tweetId]
+        ]
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+
+        let headers = ClientTransactionSigner.defaultWebSessionHeaders(
+            path: Self.unfavoriteTweetPath,
+            method: "POST",
+            authToken: authToken,
+            csrfToken: csrfToken
+        )
+
+        let request = HTTPRequest(url: url, method: .post, headers: headers, body: bodyData)
+        let response = try await transport.send(request: request)
+        return (200..<300).contains(response.statusCode)
+    }
+
     /// Retweets a post using an authenticated session.
     public func retweet(
         tweetId: String,

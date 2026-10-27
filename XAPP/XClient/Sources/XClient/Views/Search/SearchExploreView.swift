@@ -47,14 +47,19 @@ public final class SearchViewModel: ObservableObject, Sendable {
         do {
             let paginated = try await service.searchPosts(query: trimmed, cursor: nil, maxResults: 20)
             let items = paginated.data.map { postWire in
-                let author = MockDataProvider.shared.users[postWire.authorId ?? ""] ?? XUser(
-                    id: postWire.authorId ?? "usr_unknown",
-                    name: "User",
-                    username: "user"
-                )
+                let authorId = postWire.authorId ?? "usr_unknown"
+                let author: XUser
+                if let concreteService = service as? XClientService, let cached = concreteService.userCache[authorId] {
+                    author = cached
+                } else if let mockService = service as? MockClientService, let cached = mockService.users[authorId] {
+                    author = cached
+                } else {
+                    author = XUser(id: authorId, name: "User", username: authorId)
+                }
                 var item = PostItem(post: postWire, author: author)
-                item.isLiked = MockDataProvider.shared.userLikes[MockDataProvider.shared.currentUser.id]?.contains(postWire.id) ?? false
-                item.isBookmarked = MockDataProvider.shared.bookmarks.contains(where: { $0.id == postWire.id })
+                if let mockService = service as? MockClientService {
+                    item.isBookmarked = mockService.bookmarkedPostIds.contains(postWire.id)
+                }
                 return item
             }
             self.searchResults = items

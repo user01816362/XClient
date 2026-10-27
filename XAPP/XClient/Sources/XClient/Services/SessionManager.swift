@@ -118,25 +118,14 @@ public final class SessionManager: ObservableObject, Sendable {
 
         if let activeId = activeId, let account = accounts.first(where: { $0.id == activeId }) {
             self.currentState = .authenticated(account)
-        } else if isGuest {
-            self.currentState = .guest(GuestSession(guestToken: "gt_active_session"))
         } else if let firstAccount = accounts.first {
             self.currentState = .authenticated(firstAccount)
+        } else if isGuest, let savedGuestToken = userDefaults.string(forKey: "com.xproject.xclient.activeGuestToken"), !savedGuestToken.isEmpty {
+            self.currentState = .guest(GuestSession(guestToken: savedGuestToken))
         } else {
-            // Default to demo/seed preview account if first launch, or unauthenticated
-            let seedAccount = Account(
-                id: "seed_liquidglass_1",
-                username: "liquidglass",
-                displayName: "Liquid Glass",
-                avatarURL: URL(string: "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"),
-                token: "oauth_mock_liquidglass_2026",
-                csrfToken: nil,
-                authType: .oauth2,
-                isGuest: false
-            )
-            self.storedAccounts = [seedAccount]
-            self.currentState = .authenticated(seedAccount)
-            self.saveAccounts()
+            // Clean production first launch: show official OnboardingView
+            self.storedAccounts = []
+            self.currentState = .unauthenticated
         }
     }
 
@@ -180,9 +169,11 @@ public final class SessionManager: ObservableObject, Sendable {
         login(as: account)
     }
 
-    /// Continues as an anonymous guest user, activating a live guest token asynchronously.
+    private let activeGuestTokenKey = "com.xproject.xclient.activeGuestToken"
+
+    /// Continues as an anonymous guest user, activating a live guest token from X servers.
     public func continueAsGuest() {
-        let tempSession = GuestSession(guestToken: "gt_\(UUID().uuidString.prefix(12))")
+        let tempSession = GuestSession(guestToken: userDefaults.string(forKey: activeGuestTokenKey) ?? "")
         currentState = .guest(tempSession)
         userDefaults.set(true, forKey: isGuestKey)
         userDefaults.removeObject(forKey: activeAccountIdKey)
@@ -192,7 +183,21 @@ public final class SessionManager: ObservableObject, Sendable {
         }
     }
 
-    /// Queries the real Twitter guest token activation endpoint.
+    /// Asynchronously activates a live Twitter/X guest token and transitions session state.
+    @discardableResult
+    public func continueAsGuestAsync() async throws -> String {
+        let transport = URLSessionTransport()
+        let service = GraphQLTimelineService(transport: transport)
+        let liveToken = try await service.activateGuestToken()
+        let liveSession = GuestSession(guestToken: liveToken)
+        self.currentState = .guest(liveSession)
+        self.userDefaults.set(true, forKey: isGuestKey)
+        self.userDefaults.set(liveToken, forKey: activeGuestTokenKey)
+        self.userDefaults.removeObject(forKey: activeAccountIdKey)
+        return liveToken
+    }
+
+    /// Queries the real Twitter/X guest token activation endpoint (`POST https://api.twitter.com/1.1/guest/activate.json`).
     public func activateLiveGuestToken() async {
         do {
             let transport = URLSessionTransport()
@@ -200,8 +205,9 @@ public final class SessionManager: ObservableObject, Sendable {
             let liveToken = try await service.activateGuestToken()
             let liveSession = GuestSession(guestToken: liveToken)
             self.currentState = .guest(liveSession)
+            self.userDefaults.set(liveToken, forKey: activeGuestTokenKey)
         } catch {
-            // Retain existing guest session if activation was throttled or offline
+            // Keep existing guest state if offline
         }
     }
 
@@ -223,6 +229,7 @@ public final class SessionManager: ObservableObject, Sendable {
             } else {
                 currentState = .unauthenticated
                 userDefaults.removeObject(forKey: activeAccountIdKey)
+                userDefaults.removeObject(forKey: activeGuestTokenKey)
                 userDefaults.set(false, forKey: isGuestKey)
             }
         }
@@ -233,6 +240,7 @@ public final class SessionManager: ObservableObject, Sendable {
         saveAccounts()
         currentState = .unauthenticated
         userDefaults.removeObject(forKey: activeAccountIdKey)
+        userDefaults.removeObject(forKey: activeGuestTokenKey)
         userDefaults.set(false, forKey: isGuestKey)
         isShowingAccountSwitcher = false
     }

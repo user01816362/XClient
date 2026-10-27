@@ -33,35 +33,41 @@ public final class PostDetailViewModel: ObservableObject, Sendable {
         isLoading = true
         errorMessage = nil
 
-        // If available in local mock store, preload immediately for instant response
-        if focalPost == nil, let existing = MockDataProvider.shared.postItems.first(where: { $0.id == postId }) {
-            self.focalPost = existing
-        }
-
         do {
             let (postWire, repliesWire) = try await service.fetchPostDetail(postId: postId)
 
             // Resolve author
-            let author = MockDataProvider.shared.users[postWire.authorId ?? ""] ?? XUser(
-                id: postWire.authorId ?? "usr_unknown",
-                name: "User",
-                username: "user"
-            )
+            let authorId = postWire.authorId ?? "usr_unknown"
+            let author: XUser
+            if let concreteService = service as? XClientService, let cached = concreteService.userCache[authorId] {
+                author = cached
+            } else if let mockService = service as? MockClientService, let cached = mockService.users[authorId] {
+                author = cached
+            } else {
+                author = XUser(id: authorId, name: "User", username: authorId)
+            }
+
             var focal = PostItem(post: postWire, author: author)
-            focal.isLiked = MockDataProvider.shared.userLikes[MockDataProvider.shared.currentUser.id]?.contains(postId) ?? false
-            focal.isBookmarked = MockDataProvider.shared.bookmarks.contains(where: { $0.id == postId })
+            if let mockService = service as? MockClientService {
+                focal.isBookmarked = mockService.bookmarkedPostIds.contains(postId)
+            }
             self.focalPost = focal
 
             // Resolve replies
             self.replies = repliesWire.map { replyPost in
-                let replyAuthor = MockDataProvider.shared.users[replyPost.authorId ?? ""] ?? XUser(
-                    id: replyPost.authorId ?? "usr_unknown",
-                    name: "User",
-                    username: "user"
-                )
+                let replyAuthorId = replyPost.authorId ?? "usr_unknown"
+                let replyAuthor: XUser
+                if let concreteService = service as? XClientService, let cached = concreteService.userCache[replyAuthorId] {
+                    replyAuthor = cached
+                } else if let mockService = service as? MockClientService, let cached = mockService.users[replyAuthorId] {
+                    replyAuthor = cached
+                } else {
+                    replyAuthor = XUser(id: replyAuthorId, name: "User", username: replyAuthorId)
+                }
                 var replyItem = PostItem(post: replyPost, author: replyAuthor)
-                replyItem.isLiked = MockDataProvider.shared.userLikes[MockDataProvider.shared.currentUser.id]?.contains(replyPost.id) ?? false
-                replyItem.isBookmarked = MockDataProvider.shared.bookmarks.contains(where: { $0.id == replyPost.id })
+                if let mockService = service as? MockClientService {
+                    replyItem.isBookmarked = mockService.bookmarkedPostIds.contains(replyPost.id)
+                }
                 return replyItem
             }
         } catch {
@@ -78,7 +84,12 @@ public final class PostDetailViewModel: ObservableObject, Sendable {
 
         do {
             let created = try await service.createPost(text: trimmed)
-            let author = MockDataProvider.shared.currentUser
+            let activeAccount = SessionManager.shared.currentState.activeAccount
+            let author = XUser(
+                id: activeAccount?.id ?? "me",
+                name: activeAccount?.displayName ?? "User",
+                username: activeAccount?.username ?? "user"
+            )
             let replyItem = PostItem(
                 id: created.id,
                 text: created.text,
@@ -108,7 +119,24 @@ public final class PostDetailViewModel: ObservableObject, Sendable {
         post.isLiked = newState
         post.likeCount = max(0, post.likeCount + (newState ? 1 : -1))
         self.focalPost = post
-        MockDataProvider.shared.toggleLike(postId: post.id, forceState: newState)
+
+        if let concreteService = service as? XClientService, let csrf = concreteService.csrfToken {
+            Task {
+                if newState {
+                    _ = try? await concreteService.graphql.likeTweet(
+                        tweetId: post.id,
+                        authToken: concreteService.token,
+                        csrfToken: csrf
+                    )
+                } else {
+                    _ = try? await concreteService.graphql.unlikeTweet(
+                        tweetId: post.id,
+                        authToken: concreteService.token,
+                        csrfToken: csrf
+                    )
+                }
+            }
+        }
     }
 
     public func toggleBookmark() {
@@ -117,7 +145,6 @@ public final class PostDetailViewModel: ObservableObject, Sendable {
         post.isBookmarked = newState
         post.bookmarkCount = max(0, post.bookmarkCount + (newState ? 1 : -1))
         self.focalPost = post
-        MockDataProvider.shared.toggleBookmark(postId: post.id, forceState: newState)
 
         Task {
             if newState {
@@ -134,5 +161,15 @@ public final class PostDetailViewModel: ObservableObject, Sendable {
         post.isReposted = newState
         post.repostCount = max(0, post.repostCount + (newState ? 1 : -1))
         self.focalPost = post
+
+        if let concreteService = service as? XClientService, let csrf = concreteService.csrfToken {
+            Task {
+                _ = try? await concreteService.graphql.retweet(
+                    tweetId: post.id,
+                    authToken: concreteService.token,
+                    csrfToken: csrf
+                )
+            }
+        }
     }
 }

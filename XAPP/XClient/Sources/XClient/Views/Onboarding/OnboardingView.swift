@@ -114,20 +114,32 @@ public struct OnboardingView: View {
 
                     // 3. Guest Browsing
                     Button {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            sessionManager.continueAsGuest()
+                        viewModel.isLoading = true
+                        Task {
+                            do {
+                                try await sessionManager.continueAsGuestAsync()
+                            } catch {
+                                sessionManager.continueAsGuest()
+                            }
+                            viewModel.isLoading = false
                         }
                     } label: {
                         HStack(spacing: 6) {
-                            Text("Continue as guest")
-                                .font(.system(size: 14, weight: .semibold))
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 12, weight: .bold))
+                            if viewModel.isLoading {
+                                ProgressView()
+                                    .tint(palette.accent)
+                            } else {
+                                Text("Continue as guest")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 12, weight: .bold))
+                            }
                         }
                         .foregroundStyle(palette.accent)
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(.plain)
+                    .disabled(viewModel.isLoading)
                     .padding(.top, 4)
                 }
                 .padding(.horizontal, 28)
