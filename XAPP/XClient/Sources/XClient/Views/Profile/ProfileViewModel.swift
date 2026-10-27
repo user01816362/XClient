@@ -112,13 +112,14 @@ public final class ProfileViewModel: ObservableObject, Sendable {
     private weak var navigationState: AppNavigationState?
 
     // MARK: - Initialization
+    @MainActor
     public init(
         userId: String? = nil,
-        service: any XClientServiceProtocol = XClientService(),
+        service: (any XClientServiceProtocol)? = nil,
         navigationState: AppNavigationState? = nil,
         initialProfile: UserProfile? = nil
     ) {
-        self.service = service
+        self.service = service ?? XClientService()
         self.navigationState = navigationState
 
         let resolvedId = userId ?? MockDataProvider.shared.currentUser.id

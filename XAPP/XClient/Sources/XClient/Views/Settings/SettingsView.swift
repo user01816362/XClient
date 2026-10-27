@@ -11,14 +11,21 @@ import SwiftUI
 import XKitModels
 
 /// Native settings surface presenting configurable application preferences.
+@MainActor
 public struct SettingsView: View {
     @StateObject private var viewModel: SettingsViewModel
     @Environment(\.colorPalette) private var currentPalette
     @Environment(\.colorScheme) private var systemScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    public init(viewModel: SettingsViewModel = SettingsViewModel()) {
+    @MainActor
+    public init(viewModel: SettingsViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
+    @MainActor
+    public init() {
+        _viewModel = StateObject(wrappedValue: SettingsViewModel())
     }
 
     public var body: some View {

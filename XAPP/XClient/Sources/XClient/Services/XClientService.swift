@@ -190,15 +190,35 @@ public final class MockClientService: XClientServiceProtocol, Sendable {
     public var deletedPostIds: Set<String> = []
     public var shouldThrowError: Error?
 
+    @MainActor
     public init(
-        currentUser: XUser = MockDataProvider.shared.currentUser,
-        timelinePosts: [XPost] = MockDataProvider.shared.timelinePosts,
-        users: [String: XUser] = MockDataProvider.shared.users
+        currentUser: XUser,
+        timelinePosts: [XPost],
+        users: [String: XUser]
     ) {
         self.currentUser = currentUser
         self.timelinePosts = timelinePosts
         self.users = users
         self.bookmarkedPostIds = Set(MockDataProvider.shared.bookmarks.map(\.id))
+    }
+
+    @MainActor
+    public init() {
+        self.currentUser = MockDataProvider.shared.currentUser
+        self.timelinePosts = MockDataProvider.shared.timelinePosts
+        self.users = MockDataProvider.shared.users
+        self.bookmarkedPostIds = Set(MockDataProvider.shared.bookmarks.map(\.id))
+    }
+
+    @MainActor
+    public convenience init(
+        timelinePosts: [XPost]
+    ) {
+        self.init(
+            currentUser: MockDataProvider.shared.currentUser,
+            timelinePosts: timelinePosts,
+            users: MockDataProvider.shared.users
+        )
     }
 
     private func checkError() throws {

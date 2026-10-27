@@ -663,6 +663,11 @@ public struct ProfileNavigationBar: View {
 
             // Overflow Actions Button
             Menu {
+                Button {
+                    SessionManager.shared.isShowingAccountSwitcher = true
+                } label: {
+                    Label("Switch Accounts", systemImage: "person.2")
+                }
                 Button(action: {}) {
                     Label("Share Profile", systemImage: "square.and.arrow.up")
                 }

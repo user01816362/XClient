@@ -208,15 +208,16 @@ public final class ComposeViewModel: ObservableObject, Sendable {
     public let currentUser: XUser
 
     // MARK: - Initialization
+    @MainActor
     public init(
-        service: any XClientServiceProtocol = XClientService(),
+        service: (any XClientServiceProtocol)? = nil,
         draftStorage: any DraftStorageProtocol = UserDefaultsDraftStorage(),
-        currentUser: XUser = MockDataProvider.shared.currentUser,
+        currentUser: XUser? = nil,
         restoreActiveDraftOnLaunch: Bool = true
     ) {
-        self.service = service
+        self.service = service ?? XClientService()
         self.draftStorage = draftStorage
-        self.currentUser = currentUser
+        self.currentUser = currentUser ?? MockDataProvider.shared.currentUser
 
         if restoreActiveDraftOnLaunch, let activeDraft = draftStorage.loadActiveDraft(), !activeDraft.nodes.isEmpty {
             self.nodes = activeDraft.nodes

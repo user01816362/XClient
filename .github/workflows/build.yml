@@ -134,6 +134,21 @@ jobs:
           config_lower=$(echo "${CONFIGURATION}" | tr '[:upper:]' '[:lower:]')
           swift build -c "$config_lower"
 
+      - name: Build & Archive iOS App (Official Xcode Project)
+        run: |
+          set -euo pipefail
+          cd XAPP/XClient
+          xcodebuild archive \
+            -project XClient.xcodeproj \
+            -scheme XClient \
+            -destination "generic/platform=iOS" \
+            -configuration Release \
+            -archivePath "${RUNNER_TEMP}/XClient-iOS.xcarchive" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+
       - name: Package Artifacts
         id: package
         run: |
@@ -201,8 +216,12 @@ jobs:
           cp "dist/XKit-${version}.zip" "dist/XKit.zip"
           rm -rf "dist/XKit-${version}"
 
-          # Package iOS Sideloadable IPA
-          bash scripts/package_ipa.sh "$version"
+          # Package iOS Sideloadable IPA from native .xcarchive
+          mkdir -p "${RUNNER_TEMP}/Payload"
+          cp -R "${RUNNER_TEMP}/XClient-iOS.xcarchive/Products/Applications/XClient.app" "${RUNNER_TEMP}/Payload/"
+          ( cd "${RUNNER_TEMP}" && zip -qr "${GITHUB_WORKSPACE}/dist/XClient-${version}.ipa" Payload )
+          cp "dist/XClient-${version}.ipa" "dist/XClient.ipa"
+          rm -rf "${RUNNER_TEMP}/Payload"
 
       - name: Generate Checksums
         run: |
@@ -235,6 +254,7 @@ jobs:
             echo "| Channel | \`$CHANNEL\` |"
             echo "| XKit Zip | $(ls -lh dist/XKit-${version}.zip | awk '{print $5}') |"
             echo "| XClient Zip | $(ls -lh dist/XClient-${version}.zip | awk '{print $5}') |"
+            echo "| XClient IPA | $(ls -lh dist/XClient-${version}.ipa | awk '{print $5}') |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload XKit Artifacts

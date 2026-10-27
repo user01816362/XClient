@@ -14,40 +14,107 @@ import XKitModels
 // MARK: - AdaptiveRootView
 
 /// Root responsive navigation container for XClient.
+@MainActor
 public struct AdaptiveRootView: View {
     @StateObject private var navigationState: AppNavigationState
+    @ObservedObject private var sessionManager = SessionManager.shared
     #if !os(macOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
 
-    public init(navigationState: AppNavigationState = AppNavigationState()) {
+    @MainActor
+    public init(navigationState: AppNavigationState) {
         _navigationState = StateObject(wrappedValue: navigationState)
+    }
+
+    @MainActor
+    public init() {
+        _navigationState = StateObject(wrappedValue: AppNavigationState())
     }
 
     public var body: some View {
         Group {
-            #if os(macOS)
-            // macOS always uses desktop Sidebar NavigationSplitView
-            RegularRootView()
-            #else
-            // iOS dynamically adapts based on window size class (iPhone vs iPad vs Slide Over)
-            if horizontalSizeClass == .compact {
-                CompactRootView()
+            if sessionManager.currentState == .unauthenticated {
+                OnboardingView(sessionManager: sessionManager)
             } else {
-                RegularRootView()
+                VStack(spacing: 0) {
+                    if sessionManager.currentState.isGuest {
+                        GuestBannerView(sessionManager: sessionManager)
+                    }
+
+                    Group {
+                        #if os(macOS)
+                        // macOS always uses desktop Sidebar NavigationSplitView
+                        RegularRootView()
+                        #else
+                        // iOS dynamically adapts based on window size class (iPhone vs iPad vs Slide Over)
+                        if horizontalSizeClass == .compact {
+                            CompactRootView()
+                        } else {
+                            RegularRootView()
+                        }
+                        #endif
+                    }
+                }
             }
-            #endif
         }
         .environmentObject(navigationState)
         .environmentObject(navigationState.tabBarCoordinator)
+        .environmentObject(sessionManager)
         .sheet(isPresented: $navigationState.isComposePresented) {
             ComposeModalHost()
                 .environmentObject(navigationState)
+        }
+        .sheet(isPresented: $sessionManager.isShowingAccountSwitcher) {
+            AccountSwitcherView(sessionManager: sessionManager)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $sessionManager.isShowingLoginSheet) {
+            LoginSheetView(sessionManager: sessionManager)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .background {
             // Global keyboard shortcuts (Cmd+1..4, Cmd+N, Cmd+R)
             KeyboardShortcutsHandler(state: navigationState)
         }
+    }
+}
+
+/// Persistent notification banner displayed when the client runs in unauthenticated guest mode.
+@MainActor
+struct GuestBannerView: View {
+    @ObservedObject var sessionManager: SessionManager
+    @Environment(\.colorPalette) private var palette
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "person.crop.circle.badge.questionmark")
+                .font(.system(size: 14, weight: .bold))
+
+            Text("Browsing as guest • Sign in to post & interact")
+                .font(.system(size: 13, weight: .medium))
+
+            Spacer()
+
+            Button("Log in") {
+                sessionManager.isShowingLoginSheet = true
+            }
+            .font(.system(size: 12, weight: .bold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(palette.textPrimary)
+            .foregroundStyle(palette.background)
+            .clipShape(Capsule())
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(palette.secondaryBackground)
+        .overlay(
+            Rectangle().frame(height: 1).foregroundStyle(palette.borderDefault),
+            alignment: .bottom
+        )
     }
 }
 
@@ -422,11 +489,18 @@ public struct ProfileContainerView: View {
     }
 }
 
+@MainActor
 public struct SettingsContainerView: View {
     @StateObject private var viewModel: SettingsViewModel
 
-    public init(viewModel: SettingsViewModel = SettingsViewModel()) {
+    @MainActor
+    public init(viewModel: SettingsViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
+    @MainActor
+    public init() {
+        _viewModel = StateObject(wrappedValue: SettingsViewModel())
     }
 
     public var body: some View {

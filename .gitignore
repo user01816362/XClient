@@ -8,8 +8,10 @@ xcuserdata/
 
 # Large Binaries, Dumps & SDK Payloads (>100MB blocked by GitHub)
 XAPP/Payload/
+XAPP/X_12.38_dump/
 sdks/iPhoneOS27.0.sdk/
-exmaple/**/.git/
+exmaple/
+.agents/
 
 # Build Artifacts & Distribution
 dist/

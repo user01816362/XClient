@@ -40,14 +40,16 @@ public final class TimelineViewModel: ObservableObject, Sendable {
     private weak var navigationState: AppNavigationState?
 
     // MARK: - Initialization
+    @MainActor
     public init(
-        service: any XClientServiceProtocol = XClientService(),
+        service: (any XClientServiceProtocol)? = nil,
         pollingEngine: TimelinePollingEngine? = nil,
         navigationState: AppNavigationState? = nil,
         autoRefreshInterval: TimeInterval = 30.0
     ) {
-        self.service = service
-        self.pollingEngine = pollingEngine ?? TimelinePollingEngine(interval: autoRefreshInterval, service: service)
+        let resolvedService = service ?? XClientService()
+        self.service = resolvedService
+        self.pollingEngine = pollingEngine ?? TimelinePollingEngine(interval: autoRefreshInterval, service: resolvedService)
         self.navigationState = navigationState
         self.autoRefreshInterval = autoRefreshInterval
     }

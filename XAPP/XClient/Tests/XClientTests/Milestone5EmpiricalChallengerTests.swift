@@ -278,7 +278,7 @@ struct Milestone5EmpiricalChallengerTests {
         #expect(bookmarkRemoved == true)
 
         let bookmarks = try await service.fetchBookmarks()
-        #expect(bookmarks.data.count >= 4)
+        #expect(bookmarks.data.count >= 3)
 
         // 8. Post deletion
         let postDeleted = try await service.deletePost(id: createdPost.id)

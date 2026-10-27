@@ -19,7 +19,9 @@ struct DesktopRootView: View {
         AdaptiveRootView()
             .preferredColorScheme(settingsViewModel.selectedTheme.preferredColorScheme)
             .environment(\.colorPalette, palette)
+            #if os(macOS)
             .frame(minWidth: 900, minHeight: 650)
+            #endif
     }
 }
 

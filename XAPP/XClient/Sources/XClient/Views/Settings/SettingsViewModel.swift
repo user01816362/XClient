@@ -64,13 +64,14 @@ public final class SettingsViewModel: ObservableObject, Sendable {
     public var onPollingIntervalChanged: (@Sendable (PollingInterval) -> Void)?
 
     // MARK: - Initializer
+    @MainActor
     public init(
         userDefaults: UserDefaults = .standard,
-        mediaDownloadManager: MediaDownloadManager = .shared,
+        mediaDownloadManager: MediaDownloadManager? = nil,
         onPollingIntervalChanged: (@Sendable (PollingInterval) -> Void)? = nil
     ) {
         self.userDefaults = userDefaults
-        self.mediaDownloadManager = mediaDownloadManager
+        self.mediaDownloadManager = mediaDownloadManager ?? MediaDownloadManager.shared
         self.onPollingIntervalChanged = onPollingIntervalChanged
 
         // 1. Restore Theme Preference
