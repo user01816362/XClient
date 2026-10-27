@@ -24,6 +24,7 @@ public final class TimelineViewModel: ObservableObject, Sendable {
     @Published public private(set) var errorMessage: String? = nil
     @Published public private(set) var nextPaginationToken: String? = nil
     @Published public private(set) var isPollingActive: Bool = false
+    @Published public var isShowingSearchSheet: Bool = false
 
     // MARK: - Preferences & Configuration
     @Published public var autoRefreshInterval: TimeInterval = 30.0 {

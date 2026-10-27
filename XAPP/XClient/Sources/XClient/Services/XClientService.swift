@@ -43,6 +43,31 @@ extension XClientServiceProtocol {
         let response = try await fetchBookmarks(paginationToken: nil, maxResults: 20)
         return response.data
     }
+
+    public func fetchPostDetail(postId: String) async throws -> (post: XPost, replies: [XPost]) {
+        if let home = try? await fetchHomeTimeline() {
+            if let target = home.first(where: { $0.id == postId }) {
+                let replies = home.filter { $0.conversationId == postId && $0.id != postId }
+                return (post: target, replies: replies)
+            }
+        }
+        let fallback = XPost(
+            id: postId,
+            text: "Post #\(postId)",
+            authorId: "usr_me_001",
+            createdAt: Date(),
+            conversationId: postId
+        )
+        return (post: fallback, replies: [])
+    }
+
+    public func searchPosts(query: String, cursor: String? = nil, maxResults: Int = 20) async throws -> PaginatedResponse<XPost> {
+        let home = try await fetchHomeTimeline()
+        let filtered = home.filter { post in
+            post.text.localizedCaseInsensitiveContains(query)
+        }
+        return PaginatedResponse(data: filtered, resultCount: filtered.count, nextToken: nil)
+    }
 }
 
 /// Concrete implementation of XClientServiceProtocol wrapping SDK services
@@ -308,6 +333,91 @@ public final class XClientService: XClientServiceProtocol, Sendable {
             paginationToken: paginationToken,
             maxResults: maxResults
         )
+    }
+
+    // MARK: - Post Detail & Thread Operations
+    public func fetchPostDetail(postId: String) async throws -> (post: XPost, replies: [XPost]) {
+        let session = SessionManager.shared.currentState
+        switch session {
+        case .guest(let guestSession):
+            do {
+                let single = try await graphql.fetchTweetDetail(tweetId: postId, guestToken: guestSession.guestToken)
+                return (post: single.data, replies: [])
+            } catch {
+                // Fallback to local
+            }
+        case .authenticated(let account):
+            if account.authType == .webSession, let csrf = account.csrfToken {
+                do {
+                    let single = try await graphql.fetchTweetDetail(tweetId: postId, authToken: account.token, csrfToken: csrf)
+                    return (post: single.data, replies: [])
+                } catch {
+                    // Fallback to local
+                }
+            }
+        case .unauthenticated:
+            break
+        }
+
+        // Deterministic mock fallback
+        if let existing = MockDataProvider.shared.postItems.first(where: { $0.id == postId }) {
+            let replies = MockDataProvider.shared.postItems
+                .filter { $0.conversationId == postId && $0.id != postId }
+                .map(\.asXPost)
+            return (post: existing.asXPost, replies: replies)
+        }
+        let fallback = XPost(id: postId, text: "Post #\(postId)", authorId: currentUserId, createdAt: Date(), conversationId: postId)
+        return (post: fallback, replies: [])
+    }
+
+    // MARK: - Search Operations
+    public func searchPosts(query: String, cursor: String? = nil, maxResults: Int = 20) async throws -> PaginatedResponse<XPost> {
+        let session = SessionManager.shared.currentState
+        switch session {
+        case .guest(let guest):
+            do {
+                let parsed = try await graphql.fetchSearchTimelineParsed(
+                    query: query,
+                    guestToken: guest.guestToken,
+                    count: maxResults,
+                    cursor: cursor
+                )
+                for (userId, user) in parsed.users {
+                    MockDataProvider.shared.users[userId] = user
+                }
+                if !parsed.posts.isEmpty {
+                    return parsed.asPaginatedResponse
+                }
+            } catch {
+                // Fallback
+            }
+        case .authenticated(let account):
+            if account.authType == .webSession, let csrf = account.csrfToken {
+                do {
+                    let parsed = try await graphql.fetchSearchTimelineParsed(
+                        query: query,
+                        authToken: account.token,
+                        csrfToken: csrf,
+                        count: maxResults,
+                        cursor: cursor
+                    )
+                    for (userId, user) in parsed.users {
+                        MockDataProvider.shared.users[userId] = user
+                    }
+                    if !parsed.posts.isEmpty {
+                        return parsed.asPaginatedResponse
+                    }
+                } catch {
+                    // Fallback
+                }
+            }
+        case .unauthenticated:
+            break
+        }
+
+        let allPosts = MockDataProvider.shared.timelinePosts
+        let matching = allPosts.filter { $0.text.localizedCaseInsensitiveContains(query) }
+        return PaginatedResponse(data: matching, resultCount: matching.count, nextToken: nil)
     }
 }
 

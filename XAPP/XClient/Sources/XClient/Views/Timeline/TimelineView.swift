@@ -111,6 +111,42 @@ public struct TimelineView: View {
             viewModel.onDisappear()
         }
         .background(palette.background)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    SessionManager.shared.isShowingAccountSwitcher = true
+                } label: {
+                    Image(systemName: "person.crop.circle")
+                        .font(.system(size: 20))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            ToolbarItem(placement: .principal) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 18, weight: .black))
+                    .foregroundStyle(palette.textPrimary)
+            }
+
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    viewModel.isShowingSearchSheet = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $viewModel.isShowingSearchSheet) {
+            NavigationStack {
+                SearchExploreView(service: viewModel.service)
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
     }
 }
 

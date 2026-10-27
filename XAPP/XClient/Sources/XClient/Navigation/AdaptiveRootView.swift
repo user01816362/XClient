@@ -409,15 +409,7 @@ public struct PostDetailContainerView: View {
     }
 
     public var body: some View {
-        ContentUnavailableView(
-            "Post Detail",
-            systemImage: "bubble.left.and.bubble.right",
-            description: Text("Post ID: \(postId)\nFull thread conversation and replies will render here.")
-        )
-        .navigationTitle("Post")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        PostDetailView(postId: postId)
     }
 }
 
@@ -446,15 +438,7 @@ public struct MediaLightboxContainerView: View {
     }
 
     public var body: some View {
-        ContentUnavailableView(
-            "Media Lightbox",
-            systemImage: "photo.on.rectangle.angled",
-            description: Text("Viewing media asset:\n\(url.absoluteString)")
-        )
-        .navigationTitle("Media")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        MediaLightboxView(url: url)
     }
 }
 
