@@ -61,12 +61,13 @@ public struct TwitterWebLoginView: View {
                         PlatformWebViewRepresentable(
                             url: initialURL,
                             isLoading: $viewModel.isLoadingPage,
-                            onAuthSuccess: { authToken, ct0, screenName, userId in
+                            onAuthSuccess: { authToken, ct0, screenName, userId, rawCookies in
                                 handleAuthenticationSuccess(
                                     authToken: authToken,
                                     ct0: ct0,
                                     screenName: screenName,
-                                    userId: userId
+                                    userId: userId,
+                                    rawCookies: rawCookies
                                 )
                             }
                         )
@@ -254,7 +255,8 @@ public struct TwitterWebLoginView: View {
         authToken: String,
         ct0: String,
         screenName: String?,
-        userId: String?
+        userId: String?,
+        rawCookies: String? = nil
     ) {
         guard !viewModel.isAuthenticating else { return }
         viewModel.isAuthenticating = true
@@ -270,19 +272,41 @@ public struct TwitterWebLoginView: View {
             let transport = URLSessionTransport()
             let service = GraphQLTimelineService(transport: transport)
 
-            // 1. Primary: Query official verify_credentials.json using the authenticated cookies!
-            do {
-                let verifiedUser = try await service.verifyCredentials(authToken: authToken, csrfToken: ct0)
-                resolvedUserId = verifiedUser.id
-                resolvedScreenName = verifiedUser.username
-                resolvedDisplayName = verifiedUser.name
-                resolvedAvatarURL = verifiedUser.profileImageUrl.flatMap(URL.init)
-            } catch {
-                print("[TwitterWebLogin] verifyCredentials error: \(error)")
+            // 1. Primary: If numeric user ID is available, query GraphQL UserByRestId
+            if !resolvedUserId.isEmpty && !resolvedUserId.starts(with: "user_") {
+                if let liveUser = try? await service.fetchUserByRestId(
+                    userId: resolvedUserId,
+                    authToken: authToken,
+                    csrfToken: ct0,
+                    rawCookies: rawCookies
+                ), !liveUser.username.isEmpty {
+                    resolvedUserId = liveUser.id
+                    resolvedScreenName = liveUser.username
+                    resolvedDisplayName = liveUser.name
+                    resolvedAvatarURL = liveUser.profileImageUrl.flatMap(URL.init)
+                }
             }
 
-            // 2. Secondary: If screen name is known, fetch via GraphQL UserByScreenName
-            if resolvedDisplayName == nil && !resolvedScreenName.isEmpty {
+            // 2. Secondary: Query official verifyCredentials using full authenticated cookies
+            if resolvedDisplayName == nil || resolvedScreenName.isEmpty {
+                do {
+                    let verifiedUser = try await service.verifyCredentials(
+                        authToken: authToken,
+                        csrfToken: ct0,
+                        userId: resolvedUserId,
+                        rawCookies: rawCookies
+                    )
+                    resolvedUserId = verifiedUser.id
+                    resolvedScreenName = verifiedUser.username
+                    resolvedDisplayName = verifiedUser.name
+                    resolvedAvatarURL = verifiedUser.profileImageUrl.flatMap(URL.init)
+                } catch {
+                    print("[TwitterWebLogin] verifyCredentials error: \(error)")
+                }
+            }
+
+            // 3. Tertiary: If screen name is known, fetch via GraphQL UserByScreenName
+            if (resolvedDisplayName == nil || resolvedDisplayName == "Not Me") && !resolvedScreenName.isEmpty && resolvedScreenName != "x_user" {
                 do {
                     let liveUser = try await service.fetchUserByScreenName(
                         screenName: resolvedScreenName,
@@ -298,16 +322,14 @@ public struct TwitterWebLoginView: View {
                 }
             }
 
-            // 3. Fallbacks if X API endpoints were blocked
+            // 4. Strict real ID resolution: Never fallback to fake template names
             if resolvedUserId.isEmpty {
-                resolvedUserId = (resolvedScreenName.isEmpty || resolvedScreenName == "x_user")
-                    ? "user_\(UUID().uuidString.prefix(8))"
-                    : "user_\(resolvedScreenName.lowercased())"
+                resolvedUserId = "user_\(UUID().uuidString.prefix(8))"
             }
-            if resolvedScreenName.isEmpty {
-                resolvedScreenName = "X User"
+            if resolvedScreenName.isEmpty || resolvedScreenName == "x_user" {
+                resolvedScreenName = resolvedUserId
             }
-            let displayName = resolvedDisplayName ?? resolvedScreenName
+            let displayName = (resolvedDisplayName == nil || resolvedDisplayName == "Not Me") ? resolvedScreenName : (resolvedDisplayName ?? resolvedScreenName)
 
             let account = Account(
                 id: resolvedUserId,
@@ -317,7 +339,8 @@ public struct TwitterWebLoginView: View {
                 token: authToken,
                 csrfToken: ct0,
                 authType: .webSession,
-                isGuest: false
+                isGuest: false,
+                rawCookieHeader: rawCookies
             )
 
             await MainActor.run {
@@ -339,12 +362,12 @@ import UIKit
 public struct PlatformWebViewRepresentable: UIViewRepresentable {
     public let url: URL
     @Binding public var isLoading: Bool
-    public let onAuthSuccess: (String, String, String?, String?) -> Void
+    public let onAuthSuccess: (String, String, String?, String?, String?) -> Void
 
     public init(
         url: URL,
         isLoading: Binding<Bool>,
-        onAuthSuccess: @escaping (String, String, String?, String?) -> Void
+        onAuthSuccess: @escaping (String, String, String?, String?, String?) -> Void
     ) {
         self.url = url
         _isLoading = isLoading
@@ -382,12 +405,12 @@ import AppKit
 public struct PlatformWebViewRepresentable: NSViewRepresentable {
     public let url: URL
     @Binding public var isLoading: Bool
-    public let onAuthSuccess: (String, String, String?, String?) -> Void
+    public let onAuthSuccess: (String, String, String?, String?, String?) -> Void
 
     public init(
         url: URL,
         isLoading: Binding<Bool>,
-        onAuthSuccess: @escaping (String, String, String?, String?) -> Void
+        onAuthSuccess: @escaping (String, String, String?, String?, String?) -> Void
     ) {
         self.url = url
         _isLoading = isLoading
@@ -424,7 +447,7 @@ public struct PlatformWebViewRepresentable: NSViewRepresentable {
 @MainActor
 public final class WebCoordinator: NSObject, WKNavigationDelegate, WKHTTPCookieStoreObserver {
     private var isLoadingBinding: Binding<Bool>
-    private let onAuthSuccess: (String, String, String?, String?) -> Void
+    private let onAuthSuccess: (String, String, String?, String?, String?) -> Void
     private weak var webView: WKWebView?
     private var isAuthCaptured: Bool = false
     private var cookieStore: WKHTTPCookieStore?
@@ -432,7 +455,7 @@ public final class WebCoordinator: NSObject, WKNavigationDelegate, WKHTTPCookieS
 
     public init(
         isLoading: Binding<Bool>,
-        onAuthSuccess: @escaping (String, String, String?, String?) -> Void
+        onAuthSuccess: @escaping (String, String, String?, String?, String?) -> Void
     ) {
         self.isLoadingBinding = isLoading
         self.onAuthSuccess = onAuthSuccess
@@ -521,29 +544,60 @@ public final class WebCoordinator: NSObject, WKNavigationDelegate, WKHTTPCookieS
         pollingTask?.cancel()
         pollingTask = nil
 
-        // Try extracting screen_name from page DOM
+        let rawCookies = cookies
+            .filter { $0.domain.contains("x.com") || $0.domain.contains("twitter.com") }
+            .map { "\($0.name)=\($0.value)" }
+            .joined(separator: "; ")
+
+        // Try extracting screen_name from page DOM or in-page fetch
         var screenName: String?
         if let webView = self.webView {
             let js = """
-            (function() {
+            (async function() {
+                try {
+                    let r = await fetch('/i/api/1.1/account/settings.json', {
+                        headers: {
+                            'authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+                            'x-csrf-token': (document.cookie.match(/ct0=([^;]+)/) || [])[1] || ''
+                        }
+                    });
+                    if (r.ok) {
+                        let d = await r.json();
+                        if (d && d.screen_name) return JSON.stringify({ screen_name: d.screen_name });
+                    }
+                } catch(e) {}
+                try {
+                    var l = document.querySelector('a[data-testid="AppTabBar_Profile_Link"]');
+                    if (l && l.getAttribute('href')) {
+                        var sn = l.getAttribute('href').replace('/', '').trim();
+                        if (sn) return JSON.stringify({ screen_name: sn });
+                    }
+                } catch(e) {}
                 try {
                     var m = document.documentElement.outerHTML.match(/"screen_name":"([^"]+)"/);
-                    if (m && m[1]) return m[1];
-                    var u = document.documentElement.outerHTML.match(/"username":"([^"]+)"/);
-                    if (u && u[1]) return u[1];
+                    if (m && m[1]) return JSON.stringify({ screen_name: m[1] });
                 } catch(e) {}
                 return "";
             })()
             """
             screenName = await withCheckedContinuation { continuation in
                 webView.evaluateJavaScript(js) { result, _ in
-                    let name = (result as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    continuation.resume(returning: (name?.isEmpty ?? true) ? nil : name)
+                    var extracted: String? = nil
+                    if let str = result as? String, !str.isEmpty {
+                        if let data = str.data(using: .utf8),
+                           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let sn = json["screen_name"] as? String {
+                            extracted = sn
+                        } else {
+                            extracted = str
+                        }
+                    }
+                    continuation.resume(returning: extracted)
                 }
             }
         }
 
-        onAuthSuccess(token, csrf, screenName, userId)
+        onAuthSuccess(token, csrf, screenName, userId, rawCookies)
     }
 }
 

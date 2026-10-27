@@ -63,13 +63,15 @@ public struct ClientTransactionSigner: Sendable {
         return headers
     }
 
-    /// Generates authenticated web session headers with cookie injection (`auth_token`, `ct0`), CSRF matching, and transaction ID.
+    /// Generates authenticated web session headers with cookie injection (`auth_token`, `ct0`, `twid`), CSRF matching, and transaction ID.
     public static func defaultWebSessionHeaders(
         path: String = "",
         method: String = "GET",
         authToken: String? = nil,
         csrfToken: String? = nil,
-        guestToken: String? = nil
+        guestToken: String? = nil,
+        userId: String? = nil,
+        rawCookies: String? = nil
     ) -> [String: String] {
         var headers: [String: String] = [
             "accept": "*/*",
@@ -90,16 +92,26 @@ public struct ClientTransactionSigner: Sendable {
             headers["x-guest-token"] = guest
         }
 
-        var cookies: [String] = []
-        if let auth = authToken, !auth.isEmpty {
-            cookies.append("auth_token=\(auth)")
-        }
-        if let csrf = csrfToken, !csrf.isEmpty {
-            cookies.append("ct0=\(csrf)")
-            headers["x-csrf-token"] = csrf
-        }
-        if !cookies.isEmpty {
-            headers["cookie"] = cookies.joined(separator: "; ")
+        if let raw = rawCookies, !raw.isEmpty {
+            headers["cookie"] = raw
+            if let csrf = csrfToken, !csrf.isEmpty {
+                headers["x-csrf-token"] = csrf
+            }
+        } else {
+            var cookies: [String] = []
+            if let auth = authToken, !auth.isEmpty {
+                cookies.append("auth_token=\(auth)")
+            }
+            if let csrf = csrfToken, !csrf.isEmpty {
+                cookies.append("ct0=\(csrf)")
+                headers["x-csrf-token"] = csrf
+            }
+            if let uid = userId, !uid.isEmpty {
+                cookies.append("twid=u%3D\(uid)")
+            }
+            if !cookies.isEmpty {
+                headers["cookie"] = cookies.joined(separator: "; ")
+            }
         }
 
         if !path.isEmpty {

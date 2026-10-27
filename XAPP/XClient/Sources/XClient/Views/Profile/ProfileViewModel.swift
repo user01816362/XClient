@@ -213,6 +213,9 @@ public final class ProfileViewModel: ObservableObject, Sendable {
                 resolvedProfile = cached
             } else {
                 let user = try await service.fetchUserProfile(id: targetUserId)
+                if self.isCurrentUser && !user.username.isEmpty && user.username != "x_user" {
+                    self.targetUserId = user.username
+                }
                 let existing = self.userProfile
                 resolvedProfile = UserProfile(
                     user: user,
@@ -511,18 +514,18 @@ public final class ProfileViewModel: ObservableObject, Sendable {
         let activeAccount = SessionManager.shared.currentState.activeAccount
         let isMock = service is MockClientService
 
-        if !isMock && (targetUserId.isEmpty || isCurrentUser) {
+        if !isMock && (targetUserId.isEmpty || targetUserId == "x_user" || isCurrentUser) {
             if let active = activeAccount {
-                let resolved = active.username.isEmpty ? active.id : active.username
-                if targetUserId.isEmpty || (isCurrentUser && targetUserId != resolved) {
+                let resolved = (active.username.isEmpty || active.username == "x_user") ? active.id : active.username
+                if targetUserId.isEmpty || targetUserId == "x_user" || (isCurrentUser && targetUserId != resolved) {
                     targetUserId = resolved
                 }
                 isCurrentUser = true
-                if userProfile == nil {
+                if userProfile == nil || userProfile?.user.username == "x_user" || userProfile?.user.name == "Not Me" {
                     let user = XUser(
                         id: active.id,
-                        name: active.displayName,
-                        username: active.username,
+                        name: active.displayName == "Not Me" ? (active.username == "x_user" ? "" : active.username) : active.displayName,
+                        username: active.username == "x_user" ? "" : active.username,
                         description: nil,
                         verified: false,
                         profileImageUrl: active.avatarURL?.absoluteString
@@ -543,9 +546,9 @@ public final class ProfileViewModel: ObservableObject, Sendable {
             }
         }
 
-        if postsBySubtab[selectedSubtab] == nil && !isLoadingFeed && !targetUserId.isEmpty {
+        if (userProfile == nil || userProfile?.user.username.isEmpty == true || userProfile?.user.username == "x_user") && !isLoadingProfile && !targetUserId.isEmpty {
             Task { await loadProfile() }
-        } else if userProfile == nil && !isLoadingProfile && !targetUserId.isEmpty {
+        } else if postsBySubtab[selectedSubtab] == nil && !isLoadingFeed && !targetUserId.isEmpty {
             Task { await loadProfile() }
         }
     }

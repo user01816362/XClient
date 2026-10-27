@@ -260,6 +260,8 @@ public final class XClientService: XClientServiceProtocol, Sendable {
                         let liveParsed = try await graphql.fetchHomeTimeline(
                             authToken: account.token,
                             csrfToken: csrf,
+                            userId: account.id,
+                            rawCookies: account.rawCookieHeader,
                             count: maxResults,
                             cursor: paginationToken
                         )
@@ -274,17 +276,8 @@ public final class XClientService: XClientServiceProtocol, Sendable {
                     }
                 }
 
-                // 2. Fallback Feed: Avoid raw invalidURL / 401 error popups when X rate-limits or challenges live web requests
-                if !isMockSession {
-                    let welcomePost = XPost(
-                        id: "status_\(Int(Date().timeIntervalSince1970))",
-                        text: "Welcome to X! Connected as @\(account.username). Your authenticated session is active and ready.",
-                        authorId: account.id,
-                        createdAt: Date(),
-                        conversationId: nil
-                    )
-                    return PaginatedResponse(data: [welcomePost], resultCount: 1, nextToken: nil)
-                }
+                // 2. Clean fallback without any synthetic or fake placeholder posts
+                return PaginatedResponse(data: [], resultCount: 0, nextToken: nil)
             } else if !isMockSession && !currentUserId.isEmpty {
                 return try await timelines.reverseChronologicalHome(
                     userId: currentUserId,
@@ -380,9 +373,59 @@ public final class XClientService: XClientServiceProtocol, Sendable {
                 return user
             }
         } else if case .authenticated(let account) = session, account.authType == .webSession, let csrf = account.csrfToken {
-            // 1. If looking up current user, verify credentials directly from X
+            // 1. If looking up numeric id or current user, try UserByRestId directly
+            let targetNumericId = (id == account.username || id == account.id || id.isEmpty) ? account.id : id
+            if !targetNumericId.isEmpty && !targetNumericId.starts(with: "user_") && CharacterSet.decimalDigits.isSuperset(of: CharacterSet(charactersIn: targetNumericId)) {
+                if let user = try? await graphql.fetchUserByRestId(
+                    userId: targetNumericId,
+                    authToken: account.token,
+                    csrfToken: csrf,
+                    rawCookies: account.rawCookieHeader
+                ), !user.username.isEmpty {
+                    userCache[id] = user
+                    userCache[user.id] = user
+                    userCache[user.username] = user
+                    if targetNumericId == account.id && (account.username == "x_user" || account.displayName == "Not Me" || account.username != user.username) {
+                        await MainActor.run {
+                            SessionManager.shared.updateActiveAccount(
+                                username: user.username,
+                                displayName: user.name,
+                                avatarURL: user.profileImageUrl.flatMap(URL.init)
+                            )
+                        }
+                    }
+                    return user
+                }
+            }
+
+            // 2. If looking up current user, verify credentials directly from X
             if id == account.username || id == account.id || id.isEmpty {
-                if let user = try? await graphql.verifyCredentials(authToken: account.token, csrfToken: csrf) {
+                if let user = try? await graphql.verifyCredentials(
+                    authToken: account.token,
+                    csrfToken: csrf,
+                    userId: account.id,
+                    rawCookies: account.rawCookieHeader
+                ), !user.username.isEmpty {
+                    userCache[id] = user
+                    userCache[user.id] = user
+                    userCache[user.username] = user
+                    if account.username == "x_user" || account.displayName == "Not Me" || account.username != user.username {
+                        await MainActor.run {
+                            SessionManager.shared.updateActiveAccount(
+                                username: user.username,
+                                displayName: user.name,
+                                avatarURL: user.profileImageUrl.flatMap(URL.init)
+                            )
+                        }
+                    }
+                    return user
+                }
+            }
+
+            // 3. Fetch by screen name
+            let targetScreenName = (id == account.id || id.isEmpty) ? account.username : id
+            if !targetScreenName.isEmpty && targetScreenName != "x_user" {
+                if let user = try? await graphql.fetchUserByScreenName(screenName: targetScreenName, authToken: account.token, csrfToken: csrf) {
                     userCache[id] = user
                     userCache[user.id] = user
                     userCache[user.username] = user
@@ -390,15 +433,7 @@ public final class XClientService: XClientServiceProtocol, Sendable {
                 }
             }
 
-            // 2. Fetch by screen name
-            if let user = try? await graphql.fetchUserByScreenName(screenName: id, authToken: account.token, csrfToken: csrf) {
-                userCache[id] = user
-                userCache[user.id] = user
-                userCache[user.username] = user
-                return user
-            }
-
-            // 3. Fallback to active account's known authentic data if matching
+            // 4. Fallback to active account's known authentic data if matching
             if id == account.username || id == account.id || id.isEmpty {
                 let user = XUser(
                     id: account.id,

@@ -21,6 +21,8 @@ public struct GraphQLTimelineService: Sendable {
     public static let tweetDetailPath = "/graphql/3XDB26fBve-MmjHaWTUZxA/TweetDetail"
     public static let userTweetsPath = "/graphql/WmvfySbQ0FeY1zk4HU_5ow/UserTweets"
     public static let userByScreenNamePath = "/i/api/graphql/oUZZZ8Oddwxs8Cd3iW3UEA/UserByScreenName"
+    public static let userByRestIdPath = "/i/api/graphql/iMuA8BNF1TsHwjiEmybpHQ/UserByRestId"
+    public static let accountSettingsPath = "/1.1/account/settings.json"
     public static let createTweetPath = "/i/api/graphql/jm93VcEnLxM7My_CL9C_EA/CreateTweet"
     public static let verifyCredentialsPath = "/1.1/account/verify_credentials.json"
     public static let favoriteTweetPath = "/graphql/lI07N6Otwv1PhnEgXILMlh/FavoriteTweet"
@@ -91,10 +93,12 @@ public struct GraphQLTimelineService: Sendable {
         guestToken: String? = nil,
         authToken: String? = nil,
         csrfToken: String? = nil,
+        userId: String? = nil,
+        rawCookies: String? = nil,
         count: Int = 20,
         cursor: String? = nil
     ) async throws -> GraphQLTimelineParser.ParsedTimeline {
-        var components = URLComponents(string: "https://api.x.com\(Self.searchTimelinePath)")
+        var components = URLComponents(string: "https://x.com\(Self.searchTimelinePath)")
 
         var variables: [String: Any] = [
             "rawQuery": query,
@@ -128,7 +132,9 @@ public struct GraphQLTimelineService: Sendable {
             method: "GET",
             authToken: authToken,
             csrfToken: csrfToken,
-            guestToken: guestToken
+            guestToken: guestToken,
+            userId: userId,
+            rawCookies: rawCookies
         )
 
         let request = HTTPRequest(url: url, method: .get, headers: headers)
@@ -151,6 +157,8 @@ public struct GraphQLTimelineService: Sendable {
         guestToken: String? = nil,
         authToken: String? = nil,
         csrfToken: String? = nil,
+        userId: String? = nil,
+        rawCookies: String? = nil,
         count: Int = 20,
         cursor: String? = nil
     ) async throws -> PaginatedResponse<XPost> {
@@ -159,6 +167,8 @@ public struct GraphQLTimelineService: Sendable {
             guestToken: guestToken,
             authToken: authToken,
             csrfToken: csrfToken,
+            userId: userId,
+            rawCookies: rawCookies,
             count: count,
             cursor: cursor
         )
@@ -169,11 +179,87 @@ public struct GraphQLTimelineService: Sendable {
     public func fetchHomeTimeline(
         authToken: String,
         csrfToken: String,
+        userId: String? = nil,
+        rawCookies: String? = nil,
         count: Int = 20,
         cursor: String? = nil
     ) async throws -> GraphQLTimelineParser.ParsedTimeline {
-        // 1. Primary: Query authentic statuses/home_timeline.json (following feed)
-        var homeURLComponents = URLComponents(string: "https://api.twitter.com\(Self.statusesHomeTimelinePath)")
+        // 1. Primary: POST to GraphQL HomeLatestTimeline (Following feed)
+        if let gqlURL = URL(string: "https://x.com\(Self.homeLatestTimelinePath)") {
+            var variables: [String: Any] = [
+                "count": count,
+                "includePromotedContent": false,
+                "latestControlAvailable": true,
+                "requestContext": "launch"
+            ]
+            if let cursor = cursor, !cursor.isEmpty {
+                variables["cursor"] = cursor
+            }
+            let bodyObj: [String: Any] = [
+                "variables": variables,
+                "features": Self.standardFeatures,
+                "queryId": "BKB7oi212Fi7kQtCBGE4zA"
+            ]
+            if let postData = try? JSONSerialization.data(withJSONObject: bodyObj) {
+                let headers = ClientTransactionSigner.defaultWebSessionHeaders(
+                    path: Self.homeLatestTimelinePath,
+                    method: "POST",
+                    authToken: authToken,
+                    csrfToken: csrfToken,
+                    userId: userId,
+                    rawCookies: rawCookies
+                )
+                let req = HTTPRequest(url: gqlURL, method: .post, headers: headers, body: postData)
+                if let response = try? await transport.send(request: req),
+                   (200..<300).contains(response.statusCode),
+                   let data = response.data {
+                    let parsed = GraphQLTimelineParser.parseTimeline(from: data)
+                    if !parsed.posts.isEmpty {
+                        return parsed
+                    }
+                }
+            }
+        }
+
+        // 2. Secondary: POST to GraphQL HomeTimeline (For You feed)
+        if let gqlURL = URL(string: "https://x.com\(Self.homeTimelinePath)") {
+            var variables: [String: Any] = [
+                "count": count,
+                "includePromotedContent": true,
+                "latestControlAvailable": true,
+                "requestContext": "launch"
+            ]
+            if let cursor = cursor, !cursor.isEmpty {
+                variables["cursor"] = cursor
+            }
+            let bodyObj: [String: Any] = [
+                "variables": variables,
+                "features": Self.standardFeatures,
+                "queryId": "s6ERr1UxkxxBx4YundNsXw"
+            ]
+            if let postData = try? JSONSerialization.data(withJSONObject: bodyObj) {
+                let headers = ClientTransactionSigner.defaultWebSessionHeaders(
+                    path: Self.homeTimelinePath,
+                    method: "POST",
+                    authToken: authToken,
+                    csrfToken: csrfToken,
+                    userId: userId,
+                    rawCookies: rawCookies
+                )
+                let req = HTTPRequest(url: gqlURL, method: .post, headers: headers, body: postData)
+                if let response = try? await transport.send(request: req),
+                   (200..<300).contains(response.statusCode),
+                   let data = response.data {
+                    let parsed = GraphQLTimelineParser.parseTimeline(from: data)
+                    if !parsed.posts.isEmpty {
+                        return parsed
+                    }
+                }
+            }
+        }
+
+        // 3. Tertiary: GET statuses/home_timeline.json
+        var homeURLComponents = URLComponents(string: "https://x.com/i/api\(Self.statusesHomeTimelinePath)")
         var queryItems = [
             URLQueryItem(name: "count", value: "\(count)"),
             URLQueryItem(name: "tweet_mode", value: "extended"),
@@ -189,7 +275,9 @@ public struct GraphQLTimelineService: Sendable {
                 path: Self.statusesHomeTimelinePath,
                 method: "GET",
                 authToken: authToken,
-                csrfToken: csrfToken
+                csrfToken: csrfToken,
+                userId: userId,
+                rawCookies: rawCookies
             )
             let request = HTTPRequest(url: homeURL, method: .get, headers: headers)
             if let response = try? await transport.send(request: request),
@@ -202,51 +290,13 @@ public struct GraphQLTimelineService: Sendable {
             }
         }
 
-        // 2. Secondary: Query GraphQL HomeTimeline / HomeLatestTimeline
-        if URL(string: "https://x.com\(Self.homeTimelinePath)") != nil {
-            var variables: [String: Any] = [
-                "count": count,
-                "includePromotedContent": true,
-                "latestControlAvailable": true,
-                "requestContext": "launch"
-            ]
-            if let cursor = cursor, !cursor.isEmpty {
-                variables["cursor"] = cursor
-            }
-            if let varData = try? JSONSerialization.data(withJSONObject: variables),
-               let varStr = String(data: varData, encoding: .utf8),
-               let featData = try? JSONSerialization.data(withJSONObject: Self.standardFeatures),
-               let featStr = String(data: featData, encoding: .utf8) {
-                var components = URLComponents(string: "https://x.com\(Self.homeTimelinePath)")
-                components?.queryItems = [
-                    URLQueryItem(name: "variables", value: varStr),
-                    URLQueryItem(name: "features", value: featStr)
-                ]
-                if let finalURL = components?.url {
-                    let headers = ClientTransactionSigner.defaultWebSessionHeaders(
-                        path: Self.homeTimelinePath,
-                        method: "GET",
-                        authToken: authToken,
-                        csrfToken: csrfToken
-                    )
-                    let request = HTTPRequest(url: finalURL, method: .get, headers: headers)
-                    if let response = try? await transport.send(request: request),
-                       (200..<300).contains(response.statusCode),
-                       let data = response.data {
-                        let parsed = GraphQLTimelineParser.parseTimeline(from: data)
-                        if !parsed.posts.isEmpty {
-                            return parsed
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Tertiary: High-engagement global feed (news, top tech, global events) from other creators
+        // 4. Quaternary: Real live global creator posts from SearchTimeline
         return try await fetchSearchTimelineParsed(
-            query: "min_faves:10 lang:en",
+            query: "min_faves:5 lang:en",
             authToken: authToken,
             csrfToken: csrfToken,
+            userId: userId,
+            rawCookies: rawCookies,
             count: count,
             cursor: cursor
         )
@@ -502,20 +552,46 @@ public struct GraphQLTimelineService: Sendable {
         return (200..<300).contains(response.statusCode)
     }
 
-    /// Verifies the current user session against X's official account credentials endpoint.
-    public func verifyCredentials(
-        authToken: String,
-        csrfToken: String
+    /// Looks up user information by numeric REST ID via GraphQL UserByRestId.
+    public func fetchUserByRestId(
+        userId: String,
+        guestToken: String? = nil,
+        authToken: String? = nil,
+        csrfToken: String? = nil,
+        rawCookies: String? = nil
     ) async throws -> XUser {
-        guard let url = URL(string: "https://api.twitter.com\(Self.verifyCredentialsPath)?include_email=true") else {
+        var components = URLComponents(string: "https://x.com\(Self.userByRestIdPath)")
+
+        let variables: [String: Any] = [
+            "userId": userId,
+            "withSafetyModeUserFields": true
+        ]
+
+        let variablesData = try JSONSerialization.data(withJSONObject: variables)
+        let featuresData = try JSONSerialization.data(withJSONObject: Self.standardFeatures)
+
+        guard let variablesString = String(data: variablesData, encoding: .utf8),
+              let featuresString = String(data: featuresData, encoding: .utf8) else {
+            throw XKitError.invalidURL
+        }
+
+        components?.queryItems = [
+            URLQueryItem(name: "variables", value: variablesString),
+            URLQueryItem(name: "features", value: featuresString)
+        ]
+
+        guard let url = components?.url else {
             throw XKitError.invalidURL
         }
 
         let headers = ClientTransactionSigner.defaultWebSessionHeaders(
-            path: Self.verifyCredentialsPath,
+            path: Self.userByRestIdPath,
             method: "GET",
             authToken: authToken,
-            csrfToken: csrfToken
+            csrfToken: csrfToken,
+            guestToken: guestToken,
+            userId: userId,
+            rawCookies: rawCookies
         )
 
         let request = HTTPRequest(url: url, method: .get, headers: headers)
@@ -524,6 +600,33 @@ public struct GraphQLTimelineService: Sendable {
         guard (200..<300).contains(response.statusCode), let data = response.data else {
             throw XKitError.httpError(statusCode: response.statusCode, data: response.data)
         }
+
+        if let user = GraphQLTimelineParser.parseUser(from: data) {
+            return user
+        }
+
+        throw XKitError.apiError(title: "User Not Found", detail: "Could not parse user for id \(userId)", type: nil)
+    }
+
+    /// Verifies the current user session against X's official account credentials endpoint.
+    public func verifyCredentials(
+        authToken: String,
+        csrfToken: String,
+        userId: String? = nil,
+        rawCookies: String? = nil
+    ) async throws -> XUser {
+        // 1. If numeric userId is present, fetchUserByRestId directly
+        if let uid = userId, !uid.isEmpty, !uid.starts(with: "user_") {
+            if let user = try? await fetchUserByRestId(userId: uid, authToken: authToken, csrfToken: csrfToken, rawCookies: rawCookies) {
+                return user
+            }
+        }
+
+        // 2. Try official verify_credentials.json on x.com and api.twitter.com
+        let candidateURLs = [
+            "https://x.com/i/api\(Self.verifyCredentialsPath)?include_email=true",
+            "https://api.twitter.com\(Self.verifyCredentialsPath)?include_email=true"
+        ]
 
         struct CredentialsPayload: Codable {
             let id_str: String?
@@ -535,16 +638,58 @@ public struct GraphQLTimelineService: Sendable {
             let verified: Bool?
         }
 
-        let decoded = try JSONDecoder().decode(CredentialsPayload.self, from: data)
-        let userId = decoded.id_str ?? (decoded.id.map(String.init) ?? "usr_\(decoded.screen_name)")
-        return XUser(
-            id: userId,
-            name: decoded.name,
-            username: decoded.screen_name,
-            description: decoded.description,
-            verified: decoded.verified ?? false,
-            profileImageUrl: decoded.profile_image_url_https
-        )
+        for candidate in candidateURLs {
+            guard let url = URL(string: candidate) else { continue }
+            let headers = ClientTransactionSigner.defaultWebSessionHeaders(
+                path: Self.verifyCredentialsPath,
+                method: "GET",
+                authToken: authToken,
+                csrfToken: csrfToken,
+                userId: userId,
+                rawCookies: rawCookies
+            )
+            let request = HTTPRequest(url: url, method: .get, headers: headers)
+            if let response = try? await transport.send(request: request),
+               (200..<300).contains(response.statusCode),
+               let data = response.data,
+               let decoded = try? JSONDecoder().decode(CredentialsPayload.self, from: data) {
+                let resolvedId = decoded.id_str ?? (decoded.id.map(String.init) ?? "usr_\(decoded.screen_name)")
+                return XUser(
+                    id: resolvedId,
+                    name: decoded.name,
+                    username: decoded.screen_name,
+                    description: decoded.description,
+                    verified: decoded.verified ?? false,
+                    profileImageUrl: decoded.profile_image_url_https
+                )
+            }
+        }
+
+        // 3. Try account/settings.json to extract screen_name
+        let settingsURL = URL(string: "https://x.com/i/api\(Self.accountSettingsPath)")
+        if let sUrl = settingsURL {
+            let headers = ClientTransactionSigner.defaultWebSessionHeaders(
+                path: Self.accountSettingsPath,
+                method: "GET",
+                authToken: authToken,
+                csrfToken: csrfToken,
+                userId: userId,
+                rawCookies: rawCookies
+            )
+            let req = HTTPRequest(url: sUrl, method: .get, headers: headers)
+            if let resp = try? await transport.send(request: req),
+               (200..<300).contains(resp.statusCode),
+               let data = resp.data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let screenName = json["screen_name"] as? String, !screenName.isEmpty {
+                if let liveUser = try? await fetchUserByScreenName(screenName: screenName, authToken: authToken, csrfToken: csrfToken) {
+                    return liveUser
+                }
+                return XUser(id: userId ?? "usr_\(screenName)", name: screenName, username: screenName)
+            }
+        }
+
+        throw XKitError.apiError(title: "Authentication Verification Failed", detail: "Could not verify credentials with X", type: nil)
     }
 
     /// Publishes a tweet via the real internal GraphQL CreateTweet endpoint.

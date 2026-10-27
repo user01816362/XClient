@@ -69,9 +69,16 @@ public final class TimelineViewModel: ObservableObject, Sendable {
 
         do {
             let response = try await service.fetchHomeTimeline(paginationToken: nil, maxResults: 20)
-            let domainItems = response.data
-                .map { makePostItem(from: $0) }
-                .sorted { $0.createdAt > $1.createdAt }
+            var map: [String: PostItem] = [:]
+            for post in response.data.map({ makePostItem(from: $0) }) {
+                map[post.id] = post
+            }
+            let domainItems = Array(map.values).sorted {
+                if $0.createdAt == $1.createdAt {
+                    return $0.id > $1.id
+                }
+                return $0.createdAt > $1.createdAt
+            }
             self.posts = domainItems
             self.nextPaginationToken = response.nextToken
 
@@ -88,7 +95,7 @@ public final class TimelineViewModel: ObservableObject, Sendable {
         }
     }
 
-    /// Pull-to-refresh execution. Flushes unread buffer and prepends latest top posts.
+    /// Pull-to-refresh execution. Flushes unread buffer and prepends latest top posts without duplication.
     public func refreshTimeline() async {
         guard !isRefreshing else { return }
         isRefreshing = true
@@ -98,42 +105,35 @@ public final class TimelineViewModel: ObservableObject, Sendable {
             let response = try await service.fetchHomeTimeline(paginationToken: nil, maxResults: 20)
             let fetchedItems = response.data.map { makePostItem(from: $0) }
 
-            // 1. Flush any pending unread buffer items maintaining strict reverse-chronological order
-            let existingIds = Set(posts.map(\.id))
-            var seenBuffered = Set<String>()
-            let uniqueBuffered = unreadBuffer
-                .filter { !existingIds.contains($0.id) && seenBuffered.insert($0.id).inserted }
-                .sorted {
-                    if $0.createdAt == $1.createdAt {
-                        return $0.id > $1.id
-                    }
-                    return $0.createdAt > $1.createdAt
+            // Strict unique deduplication by post ID across existing, buffer, and newly fetched
+            var map: [String: PostItem] = [:]
+            for post in self.posts {
+                map[post.id] = post
+            }
+            for post in self.unreadBuffer {
+                map[post.id] = post
+            }
+            for post in fetchedItems {
+                map[post.id] = post
+            }
+
+            let sorted = Array(map.values).sorted {
+                if $0.createdAt == $1.createdAt {
+                    return $0.id > $1.id
                 }
-            var updatedPosts = uniqueBuffered + posts
-            unreadBuffer = []
-            unreadCount = 0
+                return $0.createdAt > $1.createdAt
+            }
+
+            self.posts = sorted
+            self.unreadBuffer = []
+            self.unreadCount = 0
             navigationState?.clearBadge(for: .timeline)
 
-            // 2. Prepend newly fetched posts that are not already present, filtering intra-batch duplicates
-            let currentIds = Set(updatedPosts.map(\.id))
-            var seenFetched = Set<String>()
-            let novelItems = fetchedItems
-                .filter { !currentIds.contains($0.id) && seenFetched.insert($0.id).inserted }
-                .sorted {
-                    if $0.createdAt == $1.createdAt {
-                        return $0.id > $1.id
-                    }
-                    return $0.createdAt > $1.createdAt
-                }
-            updatedPosts = novelItems + updatedPosts
-
-            self.posts = updatedPosts
             if let token = response.nextToken, self.nextPaginationToken == nil {
                 self.nextPaginationToken = token
             }
 
-            // Record all known IDs
-            await pollingEngine.recordKnownPostIds(updatedPosts.map(\.id))
+            await pollingEngine.recordKnownPostIds(sorted.map(\.id))
             self.isRefreshing = false
         } catch {
             self.errorMessage = error.localizedDescription

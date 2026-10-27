@@ -21,6 +21,7 @@ public struct Account: Identifiable, Codable, Hashable, Sendable {
     public let authType: AuthType
     public let isGuest: Bool
     public let createdAt: Date
+    public let rawCookieHeader: String?
 
     public init(
         id: String,
@@ -31,7 +32,8 @@ public struct Account: Identifiable, Codable, Hashable, Sendable {
         csrfToken: String? = nil,
         authType: AuthType = .oauth2,
         isGuest: Bool = false,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        rawCookieHeader: String? = nil
     ) {
         self.id = id
         self.username = username
@@ -42,6 +44,7 @@ public struct Account: Identifiable, Codable, Hashable, Sendable {
         self.authType = authType
         self.isGuest = isGuest
         self.createdAt = createdAt
+        self.rawCookieHeader = rawCookieHeader
     }
 }
 
@@ -118,8 +121,18 @@ public final class SessionManager: ObservableObject, Sendable {
 
         if let activeId = activeId, let account = accounts.first(where: { $0.id == activeId }) {
             self.currentState = .authenticated(account)
+            if account.username == "x_user" || account.displayName == "Not Me" || account.username.isEmpty {
+                Task { [weak self] in
+                    await self?.refreshActiveAccountInfo()
+                }
+            }
         } else if let firstAccount = accounts.first {
             self.currentState = .authenticated(firstAccount)
+            if firstAccount.username == "x_user" || firstAccount.displayName == "Not Me" || firstAccount.username.isEmpty {
+                Task { [weak self] in
+                    await self?.refreshActiveAccountInfo()
+                }
+            }
         } else if isGuest, let savedGuestToken = userDefaults.string(forKey: "com.xproject.xclient.activeGuestToken"), !savedGuestToken.isEmpty {
             self.currentState = .guest(GuestSession(guestToken: savedGuestToken))
         } else {
@@ -130,6 +143,62 @@ public final class SessionManager: ObservableObject, Sendable {
     }
 
     // MARK: - Actions
+
+    public func updateActiveAccount(username: String, displayName: String, avatarURL: URL? = nil) {
+        guard case .authenticated(let current) = currentState else { return }
+        let updated = Account(
+            id: current.id,
+            username: username,
+            displayName: displayName,
+            avatarURL: avatarURL ?? current.avatarURL,
+            token: current.token,
+            csrfToken: current.csrfToken,
+            authType: current.authType,
+            isGuest: current.isGuest,
+            createdAt: current.createdAt,
+            rawCookieHeader: current.rawCookieHeader
+        )
+        login(as: updated)
+    }
+
+    /// Automatically syncs user credentials with X if username or displayName is a placeholder
+    public func refreshActiveAccountInfo() async {
+        guard case .authenticated(let account) = currentState, account.authType == .webSession else { return }
+        let transport = URLSessionTransport()
+        let graphql = GraphQLTimelineService(transport: transport)
+
+        // 1. Try UserByRestId if numeric id is available
+        if !account.id.isEmpty, !account.id.starts(with: "user_") {
+            if let user = try? await graphql.fetchUserByRestId(
+                userId: account.id,
+                authToken: account.token,
+                csrfToken: account.csrfToken ?? "",
+                rawCookies: account.rawCookieHeader
+            ), !user.username.isEmpty {
+                updateActiveAccount(
+                    username: user.username,
+                    displayName: user.name,
+                    avatarURL: user.profileImageUrl.flatMap(URL.init)
+                )
+                return
+            }
+        }
+
+        // 2. Try verifyCredentials
+        if let user = try? await graphql.verifyCredentials(
+            authToken: account.token,
+            csrfToken: account.csrfToken ?? "",
+            userId: account.id,
+            rawCookies: account.rawCookieHeader
+        ), !user.username.isEmpty {
+            updateActiveAccount(
+                username: user.username,
+                displayName: user.name,
+                avatarURL: user.profileImageUrl.flatMap(URL.init)
+            )
+            return
+        }
+    }
 
     public func login(as account: Account) {
         if let index = storedAccounts.firstIndex(where: { $0.id == account.id }) {
