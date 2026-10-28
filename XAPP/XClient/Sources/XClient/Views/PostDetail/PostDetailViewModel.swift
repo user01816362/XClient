@@ -78,39 +78,10 @@ public final class PostDetailViewModel: ObservableObject, Sendable {
     }
 
     public func submitReply() async {
-        let trimmed = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isSubmittingReply else { return }
-        isSubmittingReply = true
-
-        do {
-            let created = try await service.createPost(text: trimmed)
-            let activeAccount = SessionManager.shared.currentState.activeAccount
-            let author = XUser(
-                id: activeAccount?.id ?? "me",
-                name: activeAccount?.displayName ?? "User",
-                username: activeAccount?.username ?? "user"
-            )
-            let replyItem = PostItem(
-                id: created.id,
-                text: created.text,
-                author: author,
-                createdAt: Date(),
-                conversationId: postId,
-                inReplyToPostId: postId
-            )
-
-            // Prepend reply and increment reply count
-            self.replies.insert(replyItem, at: 0)
-            if var post = self.focalPost {
-                post.replyCount += 1
-                self.focalPost = post
-            }
-            self.replyText = ""
-        } catch {
-            self.errorMessage = "Failed to post reply: \(error.localizedDescription)"
-        }
-
-        isSubmittingReply = false
+        guard !replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // Creating a top-level post does not create a reply. Preserve the text
+        // until the service supports a verified reply mutation.
+        errorMessage = "Reply posting is not available yet. Your text has been kept."
     }
 
     public func toggleLike() {

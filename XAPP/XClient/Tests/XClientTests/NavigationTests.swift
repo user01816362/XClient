@@ -57,6 +57,11 @@ struct NavigationTests {
         }
     }
 
+    @Test("Primary navigation keeps settings in the profile sheet")
+    func testPrimaryDestinationsExcludeSettings() {
+        #expect(AppDestination.primaryDestinations == [.timeline, .bookmarks, .profile])
+    }
+
     @Test("Verify Keyboard Shortcuts Uniqueness and Cmd+1..4 Mappings")
     @MainActor
     func testKeyboardShortcuts() {

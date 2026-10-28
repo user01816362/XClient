@@ -53,7 +53,7 @@ public struct PostDetailView: View {
                         ContentUnavailableView(
                             "Post Unavailable",
                             systemImage: "bubble.left.and.exclamationmark",
-                            description: Text("This post may have been deleted or is unavailable.")
+                            description: Text(viewModel.errorMessage ?? "This post may have been deleted or is unavailable.")
                         )
                         .padding(.top, 60)
                     }
@@ -69,6 +69,14 @@ public struct PostDetailView: View {
             }
         }
         .navigationTitle("Post")
+        .alert("Unable to complete action", isPresented: Binding(
+            get: { viewModel.focalPost != nil && viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK") { viewModel.errorMessage = nil }
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

@@ -21,6 +21,8 @@ public protocol XClientServiceProtocol: Sendable {
     func fetchBookmarks(paginationToken: String?, maxResults: Int) async throws -> PaginatedResponse<XPost>
     func deletePost(id: String) async throws -> Bool
     func fetchCurrentUser() async throws -> XUser
+    func fetchPostDetail(postId: String) async throws -> (post: XPost, replies: [XPost])
+    func searchPosts(query: String, cursor: String?, maxResults: Int) async throws -> PaginatedResponse<XPost>
 }
 
 // MARK: - Default Implementations
@@ -45,29 +47,13 @@ extension XClientServiceProtocol {
     }
 
     public func fetchPostDetail(postId: String) async throws -> (post: XPost, replies: [XPost]) {
-        if let home = try? await fetchHomeTimeline() {
-            if let target = home.first(where: { $0.id == postId }) {
-                let replies = home.filter { $0.conversationId == postId && $0.id != postId }
-                return (post: target, replies: replies)
-            }
-        }
-        let fallback = XPost(
-            id: postId,
-            text: "Post #\(postId)",
-            authorId: "usr_me_001",
-            createdAt: Date(),
-            conversationId: postId
-        )
-        return (post: fallback, replies: [])
+        throw XKitError.apiError(title: "Post unavailable", detail: "Post details are not supported by this service.", type: nil)
     }
 
     public func searchPosts(query: String, cursor: String? = nil, maxResults: Int = 20) async throws -> PaginatedResponse<XPost> {
-        let home = try await fetchHomeTimeline()
-        let filtered = home.filter { post in
-            post.text.localizedCaseInsensitiveContains(query)
-        }
-        return PaginatedResponse(data: filtered, resultCount: filtered.count, nextToken: nil)
+        throw XKitError.apiError(title: "Search unavailable", detail: "Search is not supported by this service.", type: nil)
     }
+
 }
 
 /// Concrete implementation of XClientServiceProtocol wrapping SDK services
@@ -254,30 +240,21 @@ public final class XClientService: XClientServiceProtocol, Sendable {
         case .authenticated(let account):
             if account.authType == .webSession {
                 let csrf = account.csrfToken ?? ""
-                // 1. Real Home Timeline using direct X endpoints (statuses/home_timeline.json + GraphQL HomeTimeline)
-                if !account.token.isEmpty {
-                    do {
-                        let liveParsed = try await graphql.fetchHomeTimeline(
-                            authToken: account.token,
-                            csrfToken: csrf,
-                            userId: account.id,
-                            rawCookies: account.rawCookieHeader,
-                            count: maxResults,
-                            cursor: paginationToken
-                        )
-                        for (userId, user) in liveParsed.users {
-                            self.userCache[userId] = user
-                        }
-                        if !liveParsed.posts.isEmpty {
-                            return liveParsed.asPaginatedResponse
-                        }
-                    } catch {
-                        print("[XClientService] Live HomeTimeline fetch error: \(error)")
-                    }
+                guard !account.token.isEmpty, !csrf.isEmpty else {
+                    throw XKitError.apiError(title: "Session unavailable", detail: "Sign in again to load your timeline.", type: nil)
                 }
-
-                // 2. Clean fallback without any synthetic or fake placeholder posts
-                return PaginatedResponse(data: [], resultCount: 0, nextToken: nil)
+                let liveParsed = try await graphql.fetchHomeTimeline(
+                    authToken: account.token,
+                    csrfToken: csrf,
+                    userId: account.id,
+                    rawCookies: account.rawCookieHeader,
+                    count: maxResults,
+                    cursor: paginationToken
+                )
+                for (userId, user) in liveParsed.users {
+                    self.userCache[userId] = user
+                }
+                return liveParsed.asPaginatedResponse
             } else if !isMockSession && !currentUserId.isEmpty {
                 return try await timelines.reverseChronologicalHome(
                     userId: currentUserId,
@@ -490,15 +467,7 @@ public final class XClientService: XClientServiceProtocol, Sendable {
                 if isMockSession {
                     return try await posts.create(text: text, token: token)
                 }
-                // Graceful resilient creation: preserve user post and return optimistic post without blocking the user
-                let optimistic = XPost(
-                    id: "\(Int(Date().timeIntervalSince1970 * 1000))",
-                    text: text,
-                    authorId: account.id,
-                    createdAt: Date(),
-                    conversationId: nil
-                )
-                return optimistic
+                throw error
             }
         }
         return try await posts.create(text: text, token: token)
@@ -527,14 +496,25 @@ public final class XClientService: XClientServiceProtocol, Sendable {
     }
 
     // MARK: - Post Detail & Thread Operations
+    private func detailResult(_ timeline: GraphQLTimelineParser.ParsedTimeline, postId: String) throws -> (post: XPost, replies: [XPost]) {
+        guard let post = timeline.posts.first(where: { $0.id == postId }) else {
+            throw XKitError.apiError(title: "Post unavailable", detail: "X did not return the requested post.", type: nil)
+        }
+        for (id, user) in timeline.users { userCache[id] = user }
+        // A conversation ID identifies the root, not necessarily a direct reply.
+        // Only expose entries attributable to the requested root.
+        let replies = timeline.posts.filter { $0.id != postId && $0.conversationId == postId }
+        return (post, replies)
+    }
+
     public func fetchPostDetail(postId: String) async throws -> (post: XPost, replies: [XPost]) {
         let session = SessionManager.shared.currentState
         switch session {
         case .guest(let guestSession):
             if !guestSession.guestToken.isEmpty {
                 do {
-                    let single = try await graphql.fetchTweetDetail(tweetId: postId, guestToken: guestSession.guestToken)
-                    return (post: single.data, replies: [])
+                    let parsed = try await graphql.fetchTweetDetailParsed(tweetId: postId, guestToken: guestSession.guestToken)
+                    return try detailResult(parsed, postId: postId)
                 } catch {
                     if !isMockSession { throw error }
                 }
@@ -542,8 +522,8 @@ public final class XClientService: XClientServiceProtocol, Sendable {
         case .authenticated(let account):
             if account.authType == .webSession, let csrf = account.csrfToken {
                 do {
-                    let single = try await graphql.fetchTweetDetail(tweetId: postId, authToken: account.token, csrfToken: csrf)
-                    return (post: single.data, replies: [])
+                    let parsed = try await graphql.fetchTweetDetailParsed(tweetId: postId, authToken: account.token, csrfToken: csrf)
+                    return try detailResult(parsed, postId: postId)
                 } catch {
                     if !isMockSession { throw error }
                 }
@@ -666,6 +646,22 @@ public final class MockClientService: XClientServiceProtocol, Sendable {
             timelinePosts: timelinePosts,
             users: MockDataProvider.shared.users
         )
+    }
+
+    public func fetchPostDetail(postId: String) async throws -> (post: XPost, replies: [XPost]) {
+        try checkError()
+        guard let post = timelinePosts.first(where: { $0.id == postId }) else {
+            throw XKitError.apiError(title: "Not Found", detail: "Post not found", type: nil)
+        }
+        return (post, timelinePosts.filter { $0.conversationId == postId && $0.id != postId })
+    }
+
+    public func searchPosts(query: String, cursor: String? = nil, maxResults: Int = 20) async throws -> PaginatedResponse<XPost> {
+        try checkError()
+        let matching = timelinePosts.filter { $0.text.localizedCaseInsensitiveContains(query) }
+        let limit = max(0, maxResults)
+        let page = Array(matching.prefix(limit))
+        return PaginatedResponse(data: page, resultCount: page.count, nextToken: nil)
     }
 
     private func checkError() throws {

@@ -1,5 +1,7 @@
 # Original User Request
 
+> **Historical requirements:** This document preserves earlier requests and acceptance criteria, including repeated sections. They are not statements of current functionality; local-build and exposed polling/glass settings requirements have since changed. See [project overview](PROJECT.md) and [current integration status](REAL_SESSION_INTEGRATION_STATUS.md).
+
 ## 2026-10-15T04:56:25Z
 
 Build **XClient**, a modern native SwiftUI client application for iPhone, iPad, and macOS located in `XAPP/XClient/` that connects to the `XKit` SDK. The client provides a complete native UI (adaptive navigation tabs, real-time updating reverse-chronological timeline, rich post cards with media download options, user profile views, composer, and customization settings) crafted according to modern Apple HIG and Liquid Glass principles with zero deprecated APIs.

@@ -82,4 +82,40 @@ struct APITests {
             _ = try await service.me(token: "invalid_token")
         }
     }
+    @Test("CreateTweet does not invent success for an unexpected response")
+    func testCreateTweetRequiresServerID() async throws {
+        let transport = MockTransport()
+        transport.enqueue(statusCode: 200, jsonString: "{}")
+        let service = GraphQLTimelineService(transport: transport)
+        await #expect(throws: XKitError.self) {
+            _ = try await service.createTweet(text: "Hello", authToken: "test", csrfToken: "test")
+        }
+        #expect(transport.recordedRequests.count == 1)
+    }
+
+    @Test("A failed Home request does not return unrelated search results")
+    func testHomeDoesNotFallBackToSearch() async throws {
+        let transport = MockTransport()
+        for _ in 0..<3 {
+            transport.enqueue(statusCode: 403, jsonString: "{}")
+        }
+        let service = GraphQLTimelineService(transport: transport)
+        await #expect(throws: XKitError.self) {
+            _ = try await service.fetchHomeTimeline(authToken: "test", csrfToken: "test")
+        }
+        #expect(!transport.recordedRequests.contains { $0.url.path.contains("SearchTimeline") })
+    }
+
+    @Test("Post detail must contain the requested post")
+    func testPostDetailDoesNotSubstituteAnotherPost() async throws {
+        let transport = MockTransport()
+        transport.enqueue(statusCode: 200, jsonString: """
+        {"data":[{"id":"different","text":"Other post"}]}
+        """)
+        let service = GraphQLTimelineService(transport: transport)
+        await #expect(throws: XKitError.self) {
+            _ = try await service.fetchTweetDetail(tweetId: "requested", authToken: "test", csrfToken: "test")
+        }
+    }
+
 }

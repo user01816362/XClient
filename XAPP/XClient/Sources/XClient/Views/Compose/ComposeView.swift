@@ -162,29 +162,6 @@ public struct ComposeView: View {
                             nodeRow(index: index, node: node)
                         }
 
-                        // Add to thread button
-                        Button(action: {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                viewModel.addNode()
-                            }
-                        }) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 20))
-                                    .foregroundStyle(palette.accent)
-
-                                Text("Add another post")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(palette.accent)
-
-                                Spacer()
-                            }
-                            .padding(.leading, 54)
-                            .padding(.trailing, 16)
-                            .padding(.vertical, 12)
-                        }
-                        .buttonStyle(.plain)
-
                         // Bottom spacer for toolbar clearance
                         Spacer()
                             .frame(height: 80)
@@ -424,26 +401,6 @@ public struct ComposeView: View {
     // MARK: - Bottom Accessory Toolbar
     private var accessoryToolbar: some View {
         HStack(spacing: 16) {
-            Button(action: {
-                viewModel.addAttachment(to: viewModel.activeNodeId, attachment: .samplePhoto)
-            }) {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(.system(size: 18))
-                    .foregroundStyle(palette.accent)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Attach photo")
-
-            Button(action: {
-                viewModel.addAttachment(to: viewModel.activeNodeId, attachment: .sampleVideo)
-            }) {
-                Image(systemName: "play.square")
-                    .font(.system(size: 18))
-                    .foregroundStyle(palette.accent)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Attach video")
-
             Spacer()
 
             Button(action: {
@@ -454,18 +411,6 @@ public struct ComposeView: View {
                     .foregroundStyle(palette.accent)
             }
             .buttonStyle(.plain)
-
-            Button(action: {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    viewModel.addNode()
-                }
-            }) {
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(palette.accent)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Add post to thread")
 
             CircularCharacterGauge(
                 characterCount: viewModel.activeNode.characterCount,

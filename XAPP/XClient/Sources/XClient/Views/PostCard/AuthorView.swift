@@ -151,28 +151,17 @@ public struct AuthorView: View {
 
             // 3. Overflow Menu Button
             Menu {
-                Button(action: { onShare?() }) {
-                    Label("Share Post", systemImage: "square.and.arrow.up")
+                if let onShare {
+                    Button(action: onShare) { Label("Share Post", systemImage: "square.and.arrow.up") }
                 }
-                Button(action: { onCopyLink?() }) {
-                    Label("Copy Link to Post", systemImage: "doc.on.doc")
+                if let onCopyLink {
+                    Button(action: onCopyLink) { Label("Copy Link to Post", systemImage: "doc.on.doc") }
                 }
-                Divider()
-                Button(action: { onBookmarkToggle?() }) {
-                    Label(
-                        isBookmarked ? "Remove Bookmark" : "Bookmark Post",
-                        systemImage: isBookmarked ? "bookmark.slash" : "bookmark"
-                    )
-                }
-                Divider()
-                Button(action: {}) {
-                    Label("Follow @\(author.username)", systemImage: "person.badge.plus")
-                }
-                Button(action: {}) {
-                    Label("Mute @\(author.username)", systemImage: "speaker.slash")
-                }
-                Button(role: .destructive, action: {}) {
-                    Label("Block @\(author.username)", systemImage: "nosign")
+                if let onBookmarkToggle {
+                    Button(action: onBookmarkToggle) {
+                        Label(isBookmarked ? "Remove Bookmark" : "Bookmark Post",
+                              systemImage: isBookmarked ? "bookmark.slash" : "bookmark")
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis")

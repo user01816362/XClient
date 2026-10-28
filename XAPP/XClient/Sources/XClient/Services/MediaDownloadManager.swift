@@ -427,9 +427,11 @@ public final class MediaDownloadManager: ObservableObject, Sendable {
     /// Purges all cached files from disk and resets reactive download progress and error states.
     @discardableResult
     public func clearCache() async throws -> Int {
-        guard let files = try? FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) else {
-            return 0
+        guard inFlightTasks.isEmpty else {
+            throw MediaDownloadError.fileSystemError("Wait for active media downloads to finish before clearing the cache.")
         }
+        guard FileManager.default.fileExists(atPath: cacheDirectory.path) else { return 0 }
+        let files = try FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)
         var count = 0
         for file in files {
             try FileManager.default.removeItem(at: file)

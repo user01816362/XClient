@@ -31,18 +31,6 @@ public struct OnboardingView: View {
             palette.background
                 .ignoresSafeArea()
 
-            // Subtle ambient Liquid Glass illumination
-            RadialGradient(
-                gradient: Gradient(colors: [
-                    palette.accent.opacity(0.12),
-                    Color.clear
-                ]),
-                center: .top,
-                startRadius: 50,
-                endRadius: 400
-            )
-            .ignoresSafeArea()
-
             VStack(spacing: 0) {
                 // Top Logo
                 HStack {
@@ -113,7 +101,7 @@ public struct OnboardingView: View {
                             do {
                                 try await sessionManager.continueAsGuestAsync()
                             } catch {
-                                sessionManager.continueAsGuest()
+                                viewModel.errorMessage = "Unable to start a guest session. Please try again."
                             }
                             viewModel.isLoading = false
                         }
@@ -139,6 +127,14 @@ public struct OnboardingView: View {
                 .padding(.horizontal, 28)
                 .padding(.bottom, 40)
             }
+        }
+        .alert("Could not continue", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK") { viewModel.errorMessage = nil }
+        } message: {
+            Text(viewModel.errorMessage ?? "")
         }
         .sheet(isPresented: $viewModel.showingLoginModal) {
             LoginSheetView(

@@ -433,7 +433,7 @@ struct ComposeTests {
         #expect(vm2.nodes[0].text.isEmpty)
     }
 
-    @Test("T3.2: Verify Multi-Node Thread Sequential Creation Chain")
+    @Test("T3.2: Unsupported threads remain drafts")
     @MainActor
     func testMultiNodeThreadCreation() async throws {
         let service = MockClientService()
@@ -447,11 +447,10 @@ struct ComposeTests {
         vm.updateNodeText(id: vm.nodes[2].id, text: "Part 3: The verification.")
 
         let success = await vm.publishThread()
-        #expect(success == true)
-        #expect(service.createdPosts.count == 3)
-        #expect(service.createdPosts[0].text == "Part 1: The architecture.")
-        #expect(service.createdPosts[1].text == "Part 2: The implementation.")
-        #expect(service.createdPosts[2].text == "Part 3: The verification.")
+        #expect(success == false)
+        #expect(service.createdPosts.isEmpty)
+        #expect(vm.nodes.count == 3)
+        #expect(vm.errorMessage != nil)
     }
 
     @Test("T3.3: Verify Partial Failure Preserves Unposted Nodes for Recovery")
@@ -489,9 +488,10 @@ struct ComposeTests {
         let success = await vm.publishThread()
         #expect(success == false)
         #expect(vm.errorMessage != nil)
-        // First node was posted, remaining node 2 is preserved for retry
-        #expect(vm.nodes.count == 1)
-        #expect(vm.nodes[0].text == "Node 2 fails")
+        // Unsupported threads are rejected before any request.
+        #expect(failingService.callCount == 0)
+        #expect(vm.nodes.count == 2)
+        #expect(vm.nodes[0].text == "Node 1 succeeds")
     }
 
     @Test("T3.4: Verify Media Attachment Removal and State Resilience")
@@ -560,11 +560,11 @@ struct ComposeTests {
         #expect(storage.activeDraft != nil)
         #expect(storage.activeDraft?.nodes.count == 2)
 
-        // 6. Publish Thread Sequentially
+        // 6. Unsupported thread and attachments remain in the draft.
         let success = await vm.publishThread()
-        #expect(success == true)
-        #expect(service.createdPosts.count == 2)
-        #expect(storage.activeDraft == nil)
-        #expect(vm.isDirty == false)
+        #expect(success == false)
+        #expect(service.createdPosts.isEmpty)
+        #expect(storage.activeDraft != nil)
+        #expect(vm.isDirty == true)
     }
 }

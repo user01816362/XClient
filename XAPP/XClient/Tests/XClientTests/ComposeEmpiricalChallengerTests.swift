@@ -290,8 +290,9 @@ struct ComposeEmpiricalChallengerTests {
         #expect(vm.isThreadValid == true)
 
         let success = await vm.publishThread()
-        #expect(success == true)
-        #expect(service.createdPosts.count == 1)
+        #expect(success == false)
+        #expect(service.createdPosts.isEmpty)
+        #expect(vm.nodes[0].mediaAttachments.count == 1)
     }
 
     // MARK: - 4. Media Attachment Constraints, Duplicates, and Removal

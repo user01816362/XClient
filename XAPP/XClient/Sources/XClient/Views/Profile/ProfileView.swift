@@ -100,8 +100,10 @@ public struct ProfileView: View {
                     canPop: !navigationState.currentPath.isEmpty,
                     onBack: {
                         navigationState.pop()
-                    }
+                    },
+                    onSettings: { navigationState.isSettingsSheetPresented = true }
                 )
+                .zIndex(1)
 
                 // MARK: 3. Loading & Error Overlays
                 if viewModel.isLoadingProfile && viewModel.userProfile == nil {
@@ -194,11 +196,7 @@ public struct ParallaxBannerHeader: View {
     }
 
     private var defaultBannerGradient: some View {
-        LinearGradient(
-            colors: [palette.accent.opacity(0.85), Color(hex: 0x7856FF)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        palette.tertiaryBackground
     }
 }
 
@@ -262,40 +260,7 @@ public struct ProfileIdentityBlock: View {
 
                 Spacer()
 
-                // Header Action Button (Follow / Edit)
-                switch actionMode {
-                case .currentUser:
-                    Button(action: {}) {
-                        Text("Edit Profile")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(palette.textPrimary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule()
-                                    .strokeBorder(palette.borderDefault, lineWidth: 1.0)
-                            )
-                    }
-                    .buttonStyle(.plain)
 
-                case .otherUser(let isFollowing):
-                    Button(action: onToggleFollow) {
-                        Text(isFollowing ? "Following" : "Follow")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(isFollowing ? palette.textPrimary : Color.white)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule()
-                                    .fill(isFollowing ? palette.secondaryBackground : palette.accent)
-                            )
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(isFollowing ? palette.borderDefault : Color.clear, lineWidth: 1.0)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
             }
             .padding(.top, 4)
 
@@ -604,6 +569,7 @@ public struct ProfileNavigationBar: View {
     public let scrollOffsetY: CGFloat
     public let canPop: Bool
     public let onBack: () -> Void
+    public let onSettings: () -> Void
     @Environment(\.colorPalette) private var palette
 
     public init(
@@ -611,13 +577,15 @@ public struct ProfileNavigationBar: View {
         postsCount: Int,
         scrollOffsetY: CGFloat,
         canPop: Bool = true,
-        onBack: @escaping () -> Void
+        onBack: @escaping () -> Void,
+        onSettings: @escaping () -> Void = {}
     ) {
         self.userProfile = userProfile
         self.postsCount = postsCount
         self.scrollOffsetY = scrollOffsetY
         self.canPop = canPop
         self.onBack = onBack
+        self.onSettings = onSettings
     }
 
     public var body: some View {
@@ -661,18 +629,24 @@ public struct ProfileNavigationBar: View {
 
             Spacer()
 
+            if !canPop {
+                Button(action: onSettings) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(navBarOpacity > 0.5 ? palette.textPrimary : Color.white)
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(navBarOpacity > 0.5 ? palette.secondaryBackground : Color.black.opacity(0.55)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
+            }
+
             // Overflow Actions Button
             Menu {
                 Button {
                     SessionManager.shared.isShowingAccountSwitcher = true
                 } label: {
                     Label("Switch Accounts", systemImage: "person.2")
-                }
-                Button(action: {}) {
-                    Label("Share Profile", systemImage: "square.and.arrow.up")
-                }
-                Button(action: {}) {
-                    Label("Copy Link to Profile", systemImage: "doc.on.doc")
                 }
             } label: {
                 Image(systemName: "ellipsis")

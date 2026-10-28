@@ -1,68 +1,42 @@
 # XProject
 
-Native Swift X client and reusable X API SDK — research and implementation plan
+XProject contains **XClient**, a SwiftUI client, and **XKit**, its Swift networking and model packages. The project is under development: real login and private web-session requests are implemented in source, but X endpoint compatibility, UI parity, and the current working tree have not been verified end to end on iOS.
 
-**Status:** planning only. No app source, credentials, or API requests have been added yet.
-**Research checked:** 2026-10-15. Recheck current X and Apple documentation before implementation; API access, pricing, scopes, policies, and SDK guidance can change.
+## Current status
 
-## Goal
+- XClient opens X's web login and checks the returned session against the authenticated account endpoint. Session persistence uses the device-only Keychain; migration and account switching still need device tests.
+- Home, post detail, profiles, search, and single text-post requests have implementations, but their private endpoint identifiers and transaction signing are not confirmed against the current live web session. A captured native request does not establish that a separate web-session request will work.
+- Settings is reached from the gear on your profile. It provides theme selection and a control for XClient's downloaded-media cache.
+- Replies, thread/media publishing, and undo repost are not ready. Bookmarks is a placeholder; other unsupported or unverified flows remain.
+- Mock services and fixtures are used in tests and the headless smoke runner. Their success is not evidence of live X functionality.
 
-Build a small, privacy-conscious, native Swift client for iPhone, iPad, and macOS, powered by a reusable Swift Package Manager SDK named **XKit**. Start with documented X APIs and features that can be verified end to end. Treat X 12.33 app-dump analysis as a separate research stream for understanding feature gaps; a class dump is not an API contract and does not itself authorize or make private endpoints suitable for release.
+See [current integration status](Doc/REAL_SESSION_INTEGRATION_STATUS.md) for the specific observations, scope and outstanding gaps. Avoid presenting the app as feature-complete or a drop-in replacement for X.
 
-This is a new client, not an X app wrapper, XEnhancer update, or plugin loader for the installed X app. It will have its own UI, login flow, networking, local storage, and limitations.
+## Repository
 
-## Product principles
+| Path | Purpose |
+| --- | --- |
+| `XAPP/XClient/` | XClient Swift package, SwiftUI source, tests and iOS Xcode project. The package declares iOS 17 and macOS 14 minimums. |
+| `sdks/XKit/` | Swift package containing XKit models, transport, authentication helpers, API services and test support; it declares iOS 16 and macOS 13 minimums. |
+| `XAPP/Payload/`, `XAPP/X_12.38_dump/` | Local X app artifacts and static 12.38 research input. These are not a verified third-party API contract. |
+| `exmaple/` | Reference projects, not part of XClient's implementation or evidence that its endpoints work. |
+| `.github/workflows/build.yml` | GitHub Actions workflow for SDK/client tests, package builds, unsigned iOS archive and artifacts. Its release job can publish on configured events. |
 
-- Native SwiftUI surfaces, adapted to iPhone, iPad, and Mac instead of forcing one layout everywhere.
-- A platform-neutral SDK that does not import SwiftUI, UIKit, or AppKit.
-- Official X API as the **only** production access path. Prefer v2 for new work; investigate v1.1 only when current official docs say a required capability remains there.
-- No embedded X account passwords, copied app secrets, extracted tokens, or private API dependencies in the released SDK.
-- Minimize collection: no analytics by default, no credential or private-content logs, least-privilege OAuth scopes, local Keychain-backed account credentials.
-- Fail closed on uncertain API behavior. Record evidence and open questions instead of asserting parity with X’s app.
-- Build with the current stable Apple toolchain and SDKs at implementation time; avoid deprecated APIs and verify availability before adoption.
+## Building and testing
 
-## Project folders
+Use the GitHub Actions **Build** workflow for this workspace. The user has requested no local builds because Xcode is unavailable locally. The workflow includes SwiftPM tests, the mock-based headless smoke test and an unsigned iOS archive. A CI run builds a committed remote revision; it cannot build uncommitted local changes. Before triggering a run, inspect its publishing settings and event: the workflow can publish releases.
 
-| Path | Current contents / intended use |
-|---|---|
-| `XAPP/X_12.33_dump/` | Local static analysis artifacts for the X 12.33 binary. Use only as a versioned research input. |
-| `sdks/iPhoneOS27.0.sdk/` | A 381 MB SDK bundle is present. However, the active developer directory is Command Line Tools and `xcodebuild -version` currently fails because Xcode is not selected/available. Do not treat this as a ready iOS/iPadOS app build environment. See [environment inventory](ENVIRONMENT_INVENTORY.md). |
-| `exmaple/DiscordKit/` | Reference checkout. Study package boundaries, public API ergonomics, documentation, and tests. Do not assume it is an official X pattern or copy code without reviewing its license. |
-| `exmaple/Swiftcord-2/` | Swiftcord reference README/assets. The README describes a native SwiftUI Discord client; inspect its current source and license before using it as an implementation reference. |
-| `sdks/XKit/` | Planned home for XKit Swift packages (not scaffolded yet). |
-| `XAPP/XClient/` | Planned home for the native client app (not scaffolded yet). |
+The current working-tree changes have not been built or tested in CI. A successful CI build would still not verify real X login, request acceptance, account isolation or visual behavior on a device.
 
-## Read first
+## Documentation
 
-1. [Project plan](PROJECT_PLAN.md) — phases, evidence gates, exit criteria.
-2. [SDK architecture](SDK_ARCHITECTURE.md) — package boundaries and API design rules.
-3. [Official API coverage](API_CAPABILITY_MATRIX.md) — what is documented and what remains unverified.
-4. [Dump research method](DUMP_RESEARCH_METHOD.md) — safe, reproducible analysis rules.
-5. [Security and privacy](SECURITY_PRIVACY.md) — authentication, secrets, local data, telemetry.
-6. [Apple platform and UI plan](APPLE_PLATFORM_UI.md) — SwiftUI, availability, Liquid Glass, platform adaptation.
-7. [Testing and release plan](TESTING_RELEASE_PLAN.md) — contract tests, integration gates, release criteria.
-8. [Agent handoff](AGENT_HANDOFF.md) — task boundaries and evidence requirements for future agents.
-9. [`research/outline.yaml`](research/outline.yaml) and [`research/fields.yaml`](research/fields.yaml) — structured research queue and evidence fields.
-10. [Environment inventory](ENVIRONMENT_INVENTORY.md) — current verified local setup and build blocker.
-11. [Research sources](RESEARCH_SOURCES.md) — first-party docs and local reference provenance.
+- [Project architecture and feature status](Doc/PROJECT.md)
+- [Integration evidence and open gaps](Doc/REAL_SESSION_INTEGRATION_STATUS.md)
+- [SDK architecture](Doc/SDK_ARCHITECTURE.md)
+- [Test infrastructure](Doc/TEST_INFRA.md) and [release test plan](Doc/TESTING_RELEASE_PLAN.md)
+- [Security and privacy](Doc/SECURITY_PRIVACY.md)
+- [Dump research method](Doc/DUMP_RESEARCH_METHOD.md)
+- [Agent handoff](Doc/AGENT_HANDOFF.md)
+- [Research sources](Doc/RESEARCH_SOURCES.md)
 
-## Verified starting facts
-
-- Apple documents SwiftUI and a shared multiplatform target for iOS, iPadOS, and macOS. Platform-specific experience and API availability still need explicit checks. [SwiftUI overview](https://developer.apple.com/documentation/technologyoverviews/swiftui), [multiplatform target guidance](https://developer.apple.com/documentation/Xcode/configuring-a-multiplatform-app-target).
-- Apple’s current guidance recommends adopting Liquid Glass through standard system components and using custom glass effects sparingly. [Liquid Glass overview](https://developer.apple.com/documentation/technologyoverviews/liquid-glass), [adoption guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
-- Apple documents Swift 6 strict concurrency as a compile-time aid for finding data races. Swift 6 language mode should be enabled deliberately and packages migrated with compiler evidence. [Swift 6 concurrency adoption](https://developer.apple.com/documentation/swift/adoptingswift6).
-- X documents API v2 resources including posts, users, Spaces, DMs, and lists, and identifies v1.1 as legacy with some specialized endpoints still there. The exact callable surface is endpoint-, scope-, and account-access-dependent. [About the X API](https://docs.x.com/x-api/getting-started/about-x-api), [X API documentation index](https://docs.x.com/llms.txt).
-- X’s published native-app authorization flow is OAuth 2.0 Authorization Code with PKCE. Its docs identify native apps as public clients and describe refresh-token behavior when `offline.access` is granted. [OAuth 2.0 PKCE](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code).
-- X’s current documentation index lists official Python and TypeScript XDKs. It does not list an official Swift XDK in that index at research time; recheck before deciding whether to create or adopt one. [X docs index](https://docs.x.com/llms.txt).
-
-## Non-goals for the initial project
-
-- Claiming feature parity with X’s first-party iOS app.
-- Using X app credentials, session cookies, or undocumented internal API requests in XKit.
-- Reproducing X’s UI assets or brand in a way that implies endorsement.
-- Loading arbitrary native plugin binaries or executing AI-generated code inside the app.
-- Adding an AI code-writing agent before XKit’s public contracts, sandbox, permissions, and review process exist.
-
-## Current decision
-
-Proceed with an **official-API-first SDK prototype**, then decide whether the API and access model can support the minimum native client. Keep private-endpoint findings in a separate evidence ledger and only revisit their use after policy and legal review. The project should stop or narrow scope if required features cannot be verified through documented, permitted APIs.
+The original requirements and early research plans are historical context; where they differ, the current integration status and code take precedence.

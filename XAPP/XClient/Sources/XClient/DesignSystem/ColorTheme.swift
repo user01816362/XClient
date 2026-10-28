@@ -271,7 +271,7 @@ public struct ColorPalette: Sendable, Equatable, Hashable {
     public static func resolve(preference: AppThemePreference, systemScheme: ColorScheme) -> ColorPalette {
         switch preference {
         case .system:
-            return systemScheme == .dark ? .darkDim : .light
+            return systemScheme == .dark ? .darkLightsOut : .light
         case .light:
             return .light
         case .darkDim:

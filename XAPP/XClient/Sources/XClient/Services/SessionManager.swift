@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Security
 import XKitTransport
 import XKitAPI
 
@@ -98,20 +99,41 @@ public final class SessionManager: ObservableObject, Sendable {
     @Published public private(set) var storedAccounts: [Account]
     @Published public var isShowingLoginSheet: Bool = false
     @Published public var isShowingAccountSwitcher: Bool = false
+    @Published public private(set) var credentialStorageError: String?
 
+    public func dismissCredentialStorageError() {
+        credentialStorageError = nil
+    }
+
+    private let keychainService: String
     private let userDefaults: UserDefaults
     private let accountsKey = "com.xproject.xclient.storedAccounts"
     private let activeAccountIdKey = "com.xproject.xclient.activeAccountId"
     private let isGuestKey = "com.xproject.xclient.isGuestSession"
+    private let removedAccountsKey = "com.xproject.xclient.removedAccountIDs"
+    private let removedAllAccountsKey = "com.xproject.xclient.removedAllAccounts"
 
-    public init(userDefaults: UserDefaults = .standard) {
+    /// Use a distinct keychain service and defaults suite for isolated tests.
+    public init(userDefaults: UserDefaults = .standard, keychainService: String = "com.xproject.xclient.accounts") {
         self.userDefaults = userDefaults
+        self.keychainService = keychainService
 
-        // 1. Load accounts from storage
-        var accounts: [Account] = []
-        if let data = userDefaults.data(forKey: accountsKey),
-           let decoded = try? JSONDecoder().decode([Account].self, from: data) {
-            accounts = decoded
+        // Do not fall back to an old plaintext copy when Keychain is temporarily unavailable.
+        let (keychainData, keychainStatus) = Self.readAccountsFromKeychain(service: keychainService)
+        let legacyData = keychainStatus == errSecItemNotFound ? userDefaults.data(forKey: accountsKey) : nil
+        let data = keychainData ?? legacyData
+        let removedIDs = Set(userDefaults.stringArray(forKey: removedAccountsKey) ?? [])
+        let isRemovedAll = userDefaults.bool(forKey: removedAllAccountsKey)
+        let accounts = (data.flatMap { try? JSONDecoder().decode([Account].self, from: $0) } ?? [])
+            .filter { !removedIDs.contains($0.id) && !isRemovedAll }
+        if keychainStatus == errSecSuccess, keychainData.flatMap({ try? JSONDecoder().decode([Account].self, from: $0) }) != nil {
+            userDefaults.removeObject(forKey: accountsKey)
+        } else if let legacyData, (try? JSONDecoder().decode([Account].self, from: legacyData)) != nil,
+                  let safeData = try? JSONEncoder().encode(accounts),
+                  Self.writeAccountsToKeychain(safeData, service: keychainService) {
+            userDefaults.removeObject(forKey: accountsKey)
+            userDefaults.removeObject(forKey: removedAccountsKey)
+            userDefaults.removeObject(forKey: removedAllAccountsKey)
         }
         self.storedAccounts = accounts
 
@@ -126,18 +148,10 @@ public final class SessionManager: ObservableObject, Sendable {
                     await self?.refreshActiveAccountInfo()
                 }
             }
-        } else if let firstAccount = accounts.first {
-            self.currentState = .authenticated(firstAccount)
-            if firstAccount.username == "x_user" || firstAccount.displayName == "Not Me" || firstAccount.username.isEmpty {
-                Task { [weak self] in
-                    await self?.refreshActiveAccountInfo()
-                }
-            }
         } else if isGuest, let savedGuestToken = userDefaults.string(forKey: "com.xproject.xclient.activeGuestToken"), !savedGuestToken.isEmpty {
             self.currentState = .guest(GuestSession(guestToken: savedGuestToken))
         } else {
             // Clean production first launch: show official OnboardingView
-            self.storedAccounts = []
             self.currentState = .unauthenticated
         }
     }
@@ -175,6 +189,7 @@ public final class SessionManager: ObservableObject, Sendable {
                 csrfToken: account.csrfToken ?? "",
                 rawCookies: account.rawCookieHeader
             ), !user.username.isEmpty {
+                guard currentState.activeAccount?.id == account.id else { return }
                 updateActiveAccount(
                     username: user.username,
                     displayName: user.name,
@@ -191,6 +206,7 @@ public final class SessionManager: ObservableObject, Sendable {
             userId: account.id,
             rawCookies: account.rawCookieHeader
         ), !user.username.isEmpty {
+            guard currentState.activeAccount?.id == account.id else { return }
             updateActiveAccount(
                 username: user.username,
                 displayName: user.name,
@@ -207,9 +223,12 @@ public final class SessionManager: ObservableObject, Sendable {
             storedAccounts.append(account)
         }
         currentState = .authenticated(account)
-        userDefaults.set(account.id, forKey: activeAccountIdKey)
+        if saveAccounts() {
+            userDefaults.set(account.id, forKey: activeAccountIdKey)
+        } else {
+            userDefaults.removeObject(forKey: activeAccountIdKey)
+        }
         userDefaults.set(false, forKey: isGuestKey)
-        saveAccounts()
         isShowingLoginSheet = false
 
         XClientService.shared.updateCredentials(
@@ -278,6 +297,7 @@ public final class SessionManager: ObservableObject, Sendable {
             let transport = URLSessionTransport()
             let service = GraphQLTimelineService(transport: transport)
             let liveToken = try await service.activateGuestToken()
+            guard currentState.isGuest else { return }
             let liveSession = GuestSession(guestToken: liveToken)
             self.currentState = .guest(liveSession)
             self.userDefaults.set(liveToken, forKey: activeGuestTokenKey)
@@ -301,8 +321,11 @@ public final class SessionManager: ObservableObject, Sendable {
     }
 
     public func logout(id: String) {
+        var removed = Set(userDefaults.stringArray(forKey: removedAccountsKey) ?? [])
+        removed.insert(id)
+        userDefaults.set(Array(removed), forKey: removedAccountsKey)
         storedAccounts.removeAll { $0.id == id }
-        saveAccounts()
+        _ = saveAccounts()
 
         if case .authenticated(let current) = currentState, current.id == id {
             if let next = storedAccounts.first {
@@ -317,8 +340,9 @@ public final class SessionManager: ObservableObject, Sendable {
     }
 
     public func logoutAll() {
+        userDefaults.set(true, forKey: removedAllAccountsKey)
         storedAccounts.removeAll()
-        saveAccounts()
+        _ = saveAccounts()
         currentState = .unauthenticated
         userDefaults.removeObject(forKey: activeAccountIdKey)
         userDefaults.removeObject(forKey: activeGuestTokenKey)
@@ -326,9 +350,43 @@ public final class SessionManager: ObservableObject, Sendable {
         isShowingAccountSwitcher = false
     }
 
-    private func saveAccounts() {
-        if let data = try? JSONEncoder().encode(storedAccounts) {
-            userDefaults.set(data, forKey: accountsKey)
+    private static func keychainQuery(service: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: service,
+         kSecAttrAccount as String: "sessions"]
+    }
+
+    private static func readAccountsFromKeychain(service: String) -> (Data?, OSStatus) {
+        var query = keychainQuery(service: service)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        return (result as? Data, status)
+    }
+
+    private static func writeAccountsToKeychain(_ data: Data, service: String) -> Bool {
+        let query = keychainQuery(service: service)
+        let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecSuccess { return true }
+        guard status == errSecItemNotFound else { return false }
+        var item = query
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+
+    @discardableResult
+    private func saveAccounts() -> Bool {
+        guard let data = try? JSONEncoder().encode(storedAccounts),
+              Self.writeAccountsToKeychain(data, service: keychainService) else {
+            credentialStorageError = "Account changes could not be saved securely. Try again after unlocking your device."
+            return false
         }
+        credentialStorageError = nil
+        userDefaults.removeObject(forKey: accountsKey)
+        userDefaults.removeObject(forKey: removedAccountsKey)
+        userDefaults.removeObject(forKey: removedAllAccountsKey)
+        return true
     }
 }

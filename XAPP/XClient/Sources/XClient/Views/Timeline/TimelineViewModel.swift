@@ -39,6 +39,7 @@ public final class TimelineViewModel: ObservableObject, Sendable {
     public let service: any XClientServiceProtocol
     public let pollingEngine: TimelinePollingEngine
     private weak var navigationState: AppNavigationState?
+    private var pendingActions: Set<String> = []
 
     // MARK: - Initialization
     @MainActor
@@ -213,101 +214,115 @@ public final class TimelineViewModel: ObservableObject, Sendable {
 
     // MARK: - Optimistic Social Actions
 
-    /// Toggles like state optimistically and synchronizes with live X service or mock test harness.
+    /// Apply optimistic changes only while a single request for the action is in flight.
     public func toggleLike(for post: PostItem) {
-        let targetId = post.id
-        guard let index = posts.firstIndex(where: { $0.id == targetId }) else { return }
-
-        let currentState = posts[index].isLiked
-        let newState = !currentState
-        posts[index].isLiked = newState
-        posts[index].likeCount = max(0, posts[index].likeCount + (newState ? 1 : -1))
-
-        if service is MockClientService {
-            MockDataProvider.shared.toggleLike(postId: targetId, forceState: newState)
-        } else if let concreteService = service as? XClientService, let csrf = concreteService.csrfToken {
-            Task {
-                if newState {
-                    _ = try? await concreteService.graphql.likeTweet(
-                        tweetId: targetId,
-                        authToken: concreteService.token,
-                        csrfToken: csrf
-                    )
-                } else {
-                    _ = try? await concreteService.graphql.unlikeTweet(
-                        tweetId: targetId,
-                        authToken: concreteService.token,
-                        csrfToken: csrf
-                    )
-                }
-            }
-        }
-    }
-
-    /// Toggles bookmark state optimistically and invokes service mutation.
-    public func toggleBookmark(for post: PostItem) {
-        let targetId = post.id
-        guard let index = posts.firstIndex(where: { $0.id == targetId }) else { return }
-
-        let currentState = posts[index].isBookmarked
-        let newState = !currentState
-        posts[index].isBookmarked = newState
-        posts[index].bookmarkCount = max(0, posts[index].bookmarkCount + (newState ? 1 : -1))
-
-        if service is MockClientService {
-            MockDataProvider.shared.toggleBookmark(postId: targetId, forceState: newState)
-        }
-
-        // Asynchronous service dispatch with rollback on error
+        let key = "like:" + post.id
+        guard !pendingActions.contains(key), let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+        let previous = posts[index].isLiked
+        let previousCount = posts[index].likeCount
+        let desired = !previous
+        pendingActions.insert(key)
+        posts[index].isLiked = desired
+        posts[index].likeCount = max(0, previousCount + (desired ? 1 : -1))
         Task {
+            defer { pendingActions.remove(key) }
             do {
-                if newState {
-                    _ = try await service.bookmarkPost(id: targetId)
+                if service is MockClientService {
+                    MockDataProvider.shared.toggleLike(postId: post.id, forceState: desired)
+                } else if let concrete = service as? XClientService, let csrf = concrete.csrfToken, !csrf.isEmpty {
+                    let success = try await (desired
+                        ? concrete.graphql.likeTweet(tweetId: post.id, authToken: concrete.token, csrfToken: csrf)
+                        : concrete.graphql.unlikeTweet(tweetId: post.id, authToken: concrete.token, csrfToken: csrf))
+                    guard success else { throw XKitError.apiError(title: "Like failed", detail: "X did not accept this action.", type: nil) }
                 } else {
-                    _ = try await service.removeBookmark(id: targetId)
+                    throw XKitError.apiError(title: "Like unavailable", detail: "Sign in to like posts.", type: nil)
                 }
             } catch {
-                // Revert optimistic mutation
-                if let revertIdx = self.posts.firstIndex(where: { $0.id == targetId }) {
-                    self.posts[revertIdx].isBookmarked = currentState
-                    self.posts[revertIdx].bookmarkCount = max(0, self.posts[revertIdx].bookmarkCount + (currentState ? 1 : -1))
+                if let i = posts.firstIndex(where: { $0.id == post.id }) {
+                    posts[i].isLiked = previous
+                    posts[i].likeCount = previousCount
                 }
+                errorMessage = error.localizedDescription
             }
         }
     }
 
-    /// Toggles repost state optimistically and notifies service.
-    public func toggleRepost(for post: PostItem) {
-        let targetId = post.id
-        guard let index = posts.firstIndex(where: { $0.id == targetId }) else { return }
-
-        let currentState = posts[index].isReposted
-        let newState = !currentState
-        posts[index].isReposted = newState
-        posts[index].repostCount = max(0, posts[index].repostCount + (newState ? 1 : -1))
-
-        if service is MockClientService {
-            MockDataProvider.shared.toggleRepost(postId: targetId)
-        } else if let concreteService = service as? XClientService, let csrf = concreteService.csrfToken {
-            Task {
-                _ = try? await concreteService.graphql.retweet(
-                    tweetId: targetId,
-                    authToken: concreteService.token,
-                    csrfToken: csrf
-                )
-            }
-        }
-    }
-
-    /// Deletes a post from feed and notifies backend service.
-    public func deletePost(_ post: PostItem) {
-        let targetId = post.id
-        posts.removeAll { $0.id == targetId }
-        unreadBuffer.removeAll { $0.id == targetId }
-        unreadCount = unreadBuffer.count
-
+    public func toggleBookmark(for post: PostItem) {
+        let key = "bookmark:" + post.id
+        guard !pendingActions.contains(key), let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+        let previous = posts[index].isBookmarked
+        let previousCount = posts[index].bookmarkCount
+        let desired = !previous
+        pendingActions.insert(key)
+        posts[index].isBookmarked = desired
+        posts[index].bookmarkCount = max(0, previousCount + (desired ? 1 : -1))
         Task {
-            _ = try? await service.deletePost(id: targetId)
+            defer { pendingActions.remove(key) }
+            do {
+                let success = try await (desired ? service.bookmarkPost(id: post.id) : service.removeBookmark(id: post.id))
+                guard success else { throw XKitError.apiError(title: "Bookmark failed", detail: "X did not accept this action.", type: nil) }
+            } catch {
+                if let i = posts.firstIndex(where: { $0.id == post.id }) {
+                    posts[i].isBookmarked = previous
+                    posts[i].bookmarkCount = previousCount
+                }
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    public func toggleRepost(for post: PostItem) {
+        let key = "repost:" + post.id
+        guard !pendingActions.contains(key), let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+        let previous = posts[index].isReposted
+        let previousCount = posts[index].repostCount
+        // The available endpoint creates reposts; it cannot undo one.
+        if previous && !(service is MockClientService) {
+            errorMessage = "Removing a repost is not available yet."
+            return
+        }
+        pendingActions.insert(key)
+        posts[index].isReposted = !previous
+        posts[index].repostCount = max(0, previousCount + (previous ? -1 : 1))
+        Task {
+            defer { pendingActions.remove(key) }
+            do {
+                if service is MockClientService {
+                    MockDataProvider.shared.toggleRepost(postId: post.id)
+                } else if let concrete = service as? XClientService, let csrf = concrete.csrfToken, !csrf.isEmpty {
+                    guard try await concrete.graphql.retweet(tweetId: post.id, authToken: concrete.token, csrfToken: csrf) else {
+                        throw XKitError.apiError(title: "Repost failed", detail: "X did not accept this action.", type: nil)
+                    }
+                } else {
+                    throw XKitError.apiError(title: "Repost unavailable", detail: "Sign in to repost.", type: nil)
+                }
+            } catch {
+                if let i = posts.firstIndex(where: { $0.id == post.id }) {
+                    posts[i].isReposted = previous
+                    posts[i].repostCount = previousCount
+                }
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    public func deletePost(_ post: PostItem) {
+        let key = "delete:" + post.id
+        guard !pendingActions.contains(key) else { return }
+        pendingActions.insert(key)
+        // Keep the row visible until the server confirms the deletion.
+        Task {
+            defer { pendingActions.remove(key) }
+            do {
+                guard try await service.deletePost(id: post.id) else {
+                    throw XKitError.apiError(title: "Delete failed", detail: "X did not accept this action.", type: nil)
+                }
+                posts.removeAll { $0.id == post.id }
+                unreadBuffer.removeAll { $0.id == post.id }
+                unreadCount = unreadBuffer.count
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 

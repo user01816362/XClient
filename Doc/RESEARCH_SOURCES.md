@@ -1,5 +1,7 @@
 # Research sources and evidence notes
 
+> **Historical source list:** This research was checked 2026-10-15. The repository has since added experimental private web-session requests; the linked public API sources do not validate those implementations. Recheck source availability and current terms before relying on dated claims.
+
 **Checked:** 2026-10-15. These links are first-party documentation unless explicitly labeled as a local reference checkout. Re-open them before implementation because both platform APIs and X access/policy can change.
 
 ## X API and policy
@@ -29,9 +31,9 @@
 
 ## Local reference projects (not authoritative API sources)
 
-- [`exmaple/DiscordKit/`](exmaple/DiscordKit/) — copied Discord SDK reference. Its local `Package.swift` shows separate core, client, and bot products; confirm license and current upstream state before reuse.
-- [`exmaple/Swiftcord-2/`](exmaple/Swiftcord-2/) — copied Swiftcord README/assets. Use for high-level UI/product study only until its actual source revision and license are inspected.
-- [`XAPP/X_12.33_dump/README.txt`](XAPP/X_12.33_dump/README.txt) — local dump provenance summary. Static app internals are not official X API contracts.
+- [`exmaple/DiscordKit/`](../exmaple/DiscordKit/) — copied Discord SDK reference. Its local `Package.swift` shows separate core, client, and bot products; confirm license and current upstream state before reuse.
+- [`exmaple/Swiftcord-2/`](../exmaple/Swiftcord-2/) — copied Swiftcord README/assets. Use for high-level UI/product study only until its actual source revision and license are inspected.
+- [`XAPP/X_12.38_dump/README.txt`](../XAPP/X_12.38_dump/README.txt) — supplied local dump provenance summary. Static app internals are not official X API contracts.
 
 ## Evidence rule
 

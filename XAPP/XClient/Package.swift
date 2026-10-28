@@ -62,11 +62,7 @@ let package = Package(
                 .product(name: "XKitTesting", package: "XKit")
             ],
             swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency"),
-                .unsafeFlags([
-                    "-load-plugin-library",
-                    "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib"
-                ])
+                .enableUpcomingFeature("StrictConcurrency")
             ]
         )
     ]

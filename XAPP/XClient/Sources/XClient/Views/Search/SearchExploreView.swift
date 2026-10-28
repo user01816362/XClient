@@ -17,18 +17,7 @@ public final class SearchViewModel: ObservableObject, Sendable {
     @Published public var searchQuery: String = ""
     @Published public var searchResults: [PostItem] = []
     @Published public var isSearching: Bool = false
-    @Published public var selectedTrend: String? = nil
     @Published public var errorMessage: String? = nil
-
-    public static let suggestedTrends = [
-        "#Swift6",
-        "#LiquidGlass",
-        "Apple",
-        "iOS 17",
-        "SwiftUI",
-        "OpenSource",
-        "#WWDC"
-    ]
 
     public init(service: (any XClientServiceProtocol)? = nil) {
         self.service = service ?? XClientService()
@@ -92,10 +81,6 @@ public struct SearchExploreView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
 
-                // Trending Chips Carousel
-                trendingChipsBar
-                    .padding(.bottom, 8)
-
                 Divider()
                     .overlay(palette.borderDefault)
 
@@ -109,6 +94,13 @@ public struct SearchExploreView: View {
                             .foregroundStyle(palette.textSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = viewModel.errorMessage {
+                    ContentUnavailableView(
+                        "Search unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(error)
+                    )
+                    .frame(maxHeight: .infinity)
                 } else if !viewModel.searchResults.isEmpty {
                     ScrollView {
                         LazyVStack(spacing: 0) {
@@ -195,46 +187,6 @@ public struct SearchExploreView: View {
             .background(palette.secondaryBackground)
             .clipShape(Capsule())
             .overlay(Capsule().strokeBorder(palette.borderDefault, lineWidth: 1))
-        }
-    }
-
-    // MARK: - Trending Chips
-
-    @ViewBuilder
-    private var trendingChipsBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(SearchViewModel.suggestedTrends, id: \.self) { trend in
-                    Button {
-                        viewModel.searchQuery = trend
-                        viewModel.selectedTrend = trend
-                        Task {
-                            await viewModel.executeSearch(query: trend)
-                        }
-                    } label: {
-                        Text(trend)
-                            .font(.system(size: 13, weight: .semibold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(
-                                viewModel.searchQuery == trend
-                                    ? palette.accent
-                                    : palette.secondaryBackground
-                            )
-                            .foregroundStyle(
-                                viewModel.searchQuery == trend
-                                    ? .white
-                                    : palette.textPrimary
-                            )
-                            .clipShape(Capsule())
-                            .overlay(
-                                Capsule().strokeBorder(palette.borderDefault, lineWidth: 1)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 16)
         }
     }
 

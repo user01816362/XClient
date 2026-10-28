@@ -1,10 +1,12 @@
 # Apple platform, Swift, and UI plan
 
+> **Design guidance:** This is a plan, not a verification report. XClient now declares iOS 17/macOS 14, presents Settings from the profile, and uses black for system dark mode. The web-login sheet and existing custom materials are implemented; their accessibility and device behavior remain unverified. See [current status](REAL_SESSION_INTEGRATION_STATUS.md).
+
 ## Platform strategy
 
 Target iPhone, iPad, and Mac with SwiftUI where sharing is real, then add platform-specific navigation and interaction. Apple supports a shared multiplatform target across iOS, iPadOS, and macOS, while recommending that developers verify framework/API availability and customize the experience per platform. A separate Mac target remains an option if app structure or platform APIs diverge. [Multiplatform target guidance](https://developer.apple.com/documentation/Xcode/configuring-a-multiplatform-app-target), [SwiftUI overview](https://developer.apple.com/documentation/technologyoverviews/swiftui).
 
-Do not set minimum OS versions in this plan without confirming supported-user needs, current Xcode SDK availability, XKit dependencies, and API availability. Use current stable Xcode/Swift at project bootstrap; do not select a beta just because a folder has a new SDK name.
+The XClient package and Xcode project currently declare iOS 17 and macOS 14; validate these minimums on the supported toolchain and devices. Use current stable Xcode/Swift at project bootstrap; do not select a beta just because a folder has a new SDK name.
 
 ## UI structure
 
@@ -31,4 +33,4 @@ Prioritize content legibility over decorative materials. Keep navigation, search
 
 ## Size/performance goals
 
-“Smaller than the X app” is a goal to measure, not a promise. Keep the first release lean: no embedded web copy of the app, no unnecessary analytics SDK, no bundled X app assets, limited dependencies, and bounded caches. Track release archive size, installed size, launch time, feed memory, image-cache size, and network usage on real devices. Compare only like-for-like architectures and feature sets.
+“Smaller than the X app” is a goal to measure, not a promise. Keep the first release lean: review the existing embedded web login, avoid unnecessary analytics SDKs and bundled X assets, and establish bounded caches. Track release archive size, installed size, launch time, feed memory, image-cache size, and network usage on real devices. Compare only like-for-like architectures and feature sets.

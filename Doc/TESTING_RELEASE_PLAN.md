@@ -1,5 +1,7 @@
 # Testing and release plan
 
+> **Plan, not test results:** The current changes have not been built or tested. The existing workflow runs on GitHub Actions and includes SDK/client tests, mock smoke checks and an unsigned iOS archive; it does not currently implement every CI requirement listed below. No local build is requested. See [test infrastructure](TEST_INFRA.md).
+
 ## Test layers
 
 ### Unit tests

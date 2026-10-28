@@ -1,12 +1,14 @@
 # X API capability and gap matrix
 
+> **Historical research, checked 2026-10-15:** The table below records public-API documentation reviewed at that date, not the current implementation or live authorization. XClient now also contains experimental private web-session requests; their behavior is unverified. Recheck links, access and terms before release. See [current integration status](REAL_SESSION_INTEGRATION_STATUS.md).
+
 **Evidence checked:** 2026-10-15. This is a starting map, not a parity claim. Recheck the live X docs, OpenAPI, developer console, OAuth permissions, and pricing before implementing any row.
 
 ## How to read this matrix
 
 - **Documented family** means the official docs describe the capability family. It does not prove that our app is approved, the endpoint is enabled for our app, or that every first-party app feature is exposed.
 - **Verified end to end** means tested with our developer app and test account on the current API contract. No feature is marked that way yet.
-- **Private/unverified** means the current official docs reviewed here do not establish that the native app exposes the behavior to external clients. Do not implement via guessed/private endpoints.
+- **Private/unverified** means the current official docs reviewed here do not establish that the native app exposes the behavior to external clients. Do not infer endpoint support from a private symbol or an unverified request.
 
 X’s own overview documents reading/publishing posts, user management, analytics, DMs, lists, and Spaces, and calls v2 recommended for new work while noting some specialized capabilities remain in v1.1. [About X API](https://docs.x.com/x-api/getting-started/about-x-api).
 

@@ -67,7 +67,7 @@ struct PostDetailAndSearchTests {
         #expect(vm.focalPost?.bookmarkCount == expectedCount)
     }
 
-    @Test("PostDetailViewModel submits inline reply and increments reply count")
+    @Test("Unsupported inline replies do not create unrelated posts")
     func testPostDetailSubmitReply() async {
         let localService = MockClientService()
         let targetPost = localService.timelinePosts.first!
@@ -80,10 +80,11 @@ struct PostDetailAndSearchTests {
         vm.replyText = "Fascinating perspective on Liquid Glass design!"
         await vm.submitReply()
 
-        #expect(vm.replies.count == initialRepliesCount + 1)
-        #expect(vm.replies.first?.text == "Fascinating perspective on Liquid Glass design!")
-        #expect(vm.focalPost?.replyCount == initialReplyCount + 1)
-        #expect(vm.replyText.isEmpty)
+        #expect(vm.replies.count == initialRepliesCount)
+        #expect(vm.focalPost?.replyCount == initialReplyCount)
+        #expect(vm.replyText == "Fascinating perspective on Liquid Glass design!")
+        #expect(localService.createdPosts.isEmpty)
+        #expect(vm.errorMessage != nil)
         #expect(vm.isSubmittingReply == false)
     }
 

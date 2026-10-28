@@ -63,6 +63,9 @@ let package = Package(
             name: "XKitCLI",
             dependencies: ["XKit", "XKitModels", "XKitTransport", "XKitAuth", "XKitAPI", "XKitTesting"],
             swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
-        )
+        ),
+        .testTarget(name: "XKitAPITests", dependencies: ["XKitAPI", "XKitModels", "XKitTransport", "XKitTesting"]),
+        .testTarget(name: "XKitAuthTests", dependencies: ["XKitAuth"]),
+        .testTarget(name: "XKitTransportTests", dependencies: ["XKitModels", "XKitTransport", "XKitTesting"])
     ]
 )

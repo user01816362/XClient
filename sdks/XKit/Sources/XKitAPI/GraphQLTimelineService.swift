@@ -290,16 +290,7 @@ public struct GraphQLTimelineService: Sendable {
             }
         }
 
-        // 4. Quaternary: Real live global creator posts from SearchTimeline
-        return try await fetchSearchTimelineParsed(
-            query: "min_faves:5 lang:en",
-            authToken: authToken,
-            csrfToken: csrfToken,
-            userId: userId,
-            rawCookies: rawCookies,
-            count: count,
-            cursor: cursor
-        )
+        throw XKitError.apiError(title: "Timeline unavailable", detail: "X did not return a usable Home timeline. Try again later.", type: nil)
     }
 
     /// Fetches single tweet details with rich media, conversation threads, and replies.
@@ -309,6 +300,19 @@ public struct GraphQLTimelineService: Sendable {
         authToken: String? = nil,
         csrfToken: String? = nil
     ) async throws -> SingleResourceResponse<XPost> {
+        let timeline = try await fetchTweetDetailParsed(tweetId: tweetId, guestToken: guestToken, authToken: authToken, csrfToken: csrfToken)
+        guard let post = timeline.posts.first(where: { $0.id == tweetId }) else {
+            throw XKitError.apiError(title: "Post unavailable", detail: "X did not return the requested post.", type: nil)
+        }
+        return SingleResourceResponse(data: post)
+    }
+
+    public func fetchTweetDetailParsed(
+        tweetId: String,
+        guestToken: String? = nil,
+        authToken: String? = nil,
+        csrfToken: String? = nil
+    ) async throws -> GraphQLTimelineParser.ParsedTimeline {
         var components = URLComponents(string: "https://api.x.com\(Self.tweetDetailPath)")
 
         let variables: [String: Any] = [
@@ -352,12 +356,12 @@ public struct GraphQLTimelineService: Sendable {
 
         if let data = response.data {
             let parsed = GraphQLTimelineParser.parseTimeline(from: data)
-            if let post = parsed.posts.first(where: { $0.id == tweetId }) ?? parsed.posts.first {
-                return SingleResourceResponse(data: post)
+            if parsed.posts.contains(where: { $0.id == tweetId }) {
+                return parsed
             }
         }
 
-        throw XKitError.httpError(statusCode: response.statusCode, data: response.data)
+        throw XKitError.apiError(title: "Post unavailable", detail: "X did not return the requested post.", type: nil)
     }
 
     /// Fetches a user's recent tweets via GraphQL UserTweets endpoint.
@@ -615,14 +619,7 @@ public struct GraphQLTimelineService: Sendable {
         userId: String? = nil,
         rawCookies: String? = nil
     ) async throws -> XUser {
-        // 1. If numeric userId is present, fetchUserByRestId directly
-        if let uid = userId, !uid.isEmpty, !uid.starts(with: "user_") {
-            if let user = try? await fetchUserByRestId(userId: uid, authToken: authToken, csrfToken: csrfToken, rawCookies: rawCookies) {
-                return user
-            }
-        }
-
-        // 2. Try official verify_credentials.json on x.com and api.twitter.com
+        // Only an authenticated endpoint can establish the session owner.
         let candidateURLs = [
             "https://x.com/i/api\(Self.verifyCredentialsPath)?include_email=true",
             "https://api.twitter.com\(Self.verifyCredentialsPath)?include_email=true"
@@ -653,7 +650,8 @@ public struct GraphQLTimelineService: Sendable {
                (200..<300).contains(response.statusCode),
                let data = response.data,
                let decoded = try? JSONDecoder().decode(CredentialsPayload.self, from: data) {
-                let resolvedId = decoded.id_str ?? (decoded.id.map(String.init) ?? "usr_\(decoded.screen_name)")
+                guard let resolvedId = decoded.id_str ?? decoded.id.map(String.init),
+                      !resolvedId.isEmpty, !decoded.screen_name.isEmpty else { continue }
                 return XUser(
                     id: resolvedId,
                     name: decoded.name,
@@ -662,30 +660,6 @@ public struct GraphQLTimelineService: Sendable {
                     verified: decoded.verified ?? false,
                     profileImageUrl: decoded.profile_image_url_https
                 )
-            }
-        }
-
-        // 3. Try account/settings.json to extract screen_name
-        let settingsURL = URL(string: "https://x.com/i/api\(Self.accountSettingsPath)")
-        if let sUrl = settingsURL {
-            let headers = ClientTransactionSigner.defaultWebSessionHeaders(
-                path: Self.accountSettingsPath,
-                method: "GET",
-                authToken: authToken,
-                csrfToken: csrfToken,
-                userId: userId,
-                rawCookies: rawCookies
-            )
-            let req = HTTPRequest(url: sUrl, method: .get, headers: headers)
-            if let resp = try? await transport.send(request: req),
-               (200..<300).contains(resp.statusCode),
-               let data = resp.data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let screenName = json["screen_name"] as? String, !screenName.isEmpty {
-                if let liveUser = try? await fetchUserByScreenName(screenName: screenName, authToken: authToken, csrfToken: csrfToken) {
-                    return liveUser
-                }
-                return XUser(id: userId ?? "usr_\(screenName)", name: screenName, username: screenName)
             }
         }
 
@@ -746,12 +720,8 @@ public struct GraphQLTimelineService: Sendable {
             )
         }
 
-        return XPost(
-            id: "\(Int(Date().timeIntervalSince1970 * 1000))",
-            text: text,
-            authorId: nil,
-            createdAt: Date(),
-            conversationId: nil
-        )
+        // The server may have accepted the post despite returning an unexpected body.
+        // Do not fabricate an ID or retry: either could mislead the user or duplicate it.
+        throw XKitError.apiError(title: "Post status unknown", detail: "X returned an unexpected response. Check your profile before trying again.", type: nil)
     }
 }

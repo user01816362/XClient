@@ -19,6 +19,24 @@ import XKitAPI
 @Suite("Milestone 3: Reverse-Chronological Timeline & Polling Tests", .serialized)
 struct TimelineTests {
 
+    @Test("Failed bookmark and delete do not appear successful")
+    @MainActor
+    func failedActionsRemainVisible() async throws {
+        let provider = MockDataProvider()
+        let service = MockClientService(currentUser: provider.currentUser, timelinePosts: provider.timelinePosts, users: provider.users)
+        let model = TimelineViewModel(service: service, autoRefreshInterval: 0)
+        await model.fetchTimeline()
+        let post = try #require(model.posts.first)
+        service.shouldThrowError = URLError(.notConnectedToInternet)
+        model.toggleBookmark(for: post)
+        for _ in 0..<20 where model.errorMessage == nil { await Task.yield() }
+        #expect(model.posts.first(where: { $0.id == post.id })?.isBookmarked == post.isBookmarked)
+        #expect(model.errorMessage != nil)
+        model.deletePost(post)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(model.posts.contains(where: { $0.id == post.id }))
+    }
+
     // MARK: - Test 1.1: Initial Feed Loading & Strict Reverse-Chronological Order
     @Test("Verify Initial Timeline Loading and Strict Reverse-Chronological Ordering")
     @MainActor

@@ -188,7 +188,7 @@ struct DesignSystemTests {
         #expect(systemLight == ColorPalette.light)
 
         let systemDark = ColorPalette.resolve(preference: .system, systemScheme: .dark)
-        #expect(systemDark == ColorPalette.darkDim)
+        #expect(systemDark == ColorPalette.darkLightsOut)
     }
 
     // MARK: - Liquid Glass Style Attributes

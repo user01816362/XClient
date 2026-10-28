@@ -381,6 +381,13 @@ public final class ComposeViewModel: ObservableObject, Sendable {
     public func publishThread() async -> Bool {
         guard isThreadValid, !isPublishing else { return false }
 
+        // The service currently accepts only a single text post. Never send a
+        // misleading partial result for a thread or discard attached media.
+        guard nodes.count == 1, nodes[0].mediaAttachments.isEmpty else {
+            errorMessage = "Posting threads and media is not available yet. Your draft has been kept."
+            return false
+        }
+
         errorMessage = nil
         publishStatus = .publishing(currentNodeIndex: 0, totalNodes: nodes.count)
 

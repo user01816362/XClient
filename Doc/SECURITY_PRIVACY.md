@@ -1,5 +1,7 @@
 # Security and privacy plan
 
+> **Goals and current state:** The application currently uses an isolated WKWebView login and stores an encoded collection of account sessions in a device-only Keychain item, with migration logic. It does not currently implement the system OAuth login described below. Keychain failures, logout, account isolation, cache partitioning and data retention require device testing and review. See [integration status](REAL_SESSION_INTEGRATION_STATUS.md).
+
 ## Security goals
 
 - Never request or handle an X password directly.
@@ -10,7 +12,7 @@
 - Provide clear account removal/logout and remove local credentials and account-scoped cached data when requested.
 - Make account isolation explicit: every authenticated request, cache, and persisted item is associated with the correct account.
 
-## Login plan
+## Alternative OAuth login plan
 
 Use X’s documented OAuth 2.0 Authorization Code with PKCE for a registered native public client. Do not embed a client secret. Use Apple AuthenticationServices system web authentication (not a hard-coded desktop browser user agent and not a hand-built login WebView), configure the redirect URI with X, validate state and PKCE response values, and handle cancellation/errors. Apple documents `ASWebAuthenticationSession` as the system mechanism for third-party web authentication; it presents an OS-controlled confirmation/session and returns the callback to the initiating app. Confirm current Apple and X guidance during implementation. [Apple authentication session](https://developer.apple.com/documentation/authenticationservices/aswebauthenticationsession), [X OAuth PKCE](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code).
 

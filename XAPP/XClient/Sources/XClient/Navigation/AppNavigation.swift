@@ -20,6 +20,9 @@ public enum AppDestination: String, Hashable, CaseIterable, Identifiable, Sendab
 
     public var id: String { rawValue }
 
+    /// User-facing primary destinations; settings is presented from the profile.
+    public static var primaryDestinations: [AppDestination] { [.timeline, .bookmarks, .profile] }
+
     /// Localized, human-readable title conforming to Apple HIG.
     public var title: String {
         switch self {
@@ -89,13 +92,13 @@ public enum AppDestination: String, Hashable, CaseIterable, Identifiable, Sendab
     public var accessibilityLabel: String {
         switch self {
         case .timeline:
-            return "Timeline tab, item \(shortcutNumber) of 4"
+            return "Timeline tab, item \(shortcutNumber) of 3"
         case .bookmarks:
-            return "Bookmarks tab, item \(shortcutNumber) of 4"
+            return "Bookmarks tab, item \(shortcutNumber) of 3"
         case .profile:
-            return "Profile tab, item \(shortcutNumber) of 4"
+            return "Profile tab, item \(shortcutNumber) of 3"
         case .settings:
-            return "Settings tab, item \(shortcutNumber) of 4"
+            return "Settings"
         }
     }
 }

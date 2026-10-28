@@ -10,14 +10,15 @@ import XKitTesting
 
 /// Root desktop view displayed during interactive desktop execution.
 struct DesktopRootView: View {
-    @StateObject private var settingsViewModel = SettingsViewModel()
+    @AppStorage("app_theme_preference") private var themeRaw = AppThemePreference.system.rawValue
     @Environment(\.colorScheme) private var systemScheme
 
     var body: some View {
-        let palette = ColorPalette.resolve(preference: settingsViewModel.selectedTheme, systemScheme: systemScheme)
+        let preference = AppThemePreference(rawValue: themeRaw) ?? .system
+        let palette = ColorPalette.resolve(preference: preference, systemScheme: systemScheme)
 
         AdaptiveRootView()
-            .preferredColorScheme(settingsViewModel.selectedTheme.preferredColorScheme)
+            .preferredColorScheme(preference.preferredColorScheme)
             .environment(\.colorPalette, palette)
             #if os(macOS)
             .frame(minWidth: 900, minHeight: 650)

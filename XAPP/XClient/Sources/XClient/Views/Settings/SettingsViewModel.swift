@@ -146,12 +146,14 @@ public final class SettingsViewModel: ObservableObject, Sendable {
         do {
             let count = try await mediaDownloadManager.clearCache()
             self.lastPurgeCount = count
-            self.currentCacheSizeBytes = 0
-            self.currentCacheSizeMB = 0.0
+            self.currentCacheSizeBytes = mediaDownloadManager.cacheSizeInBytes()
+            self.currentCacheSizeMB = Double(currentCacheSizeBytes) / (1024.0 * 1024.0)
             self.statusMessage = count > 0 ? "Purged \(count) cached media items." : "Cache is already empty."
             self.isPurgingCache = false
             return count
         } catch {
+            self.currentCacheSizeBytes = mediaDownloadManager.cacheSizeInBytes()
+            self.currentCacheSizeMB = Double(currentCacheSizeBytes) / (1024.0 * 1024.0)
             self.statusMessage = "Purge failed: \(error.localizedDescription)"
             self.isPurgingCache = false
             return 0

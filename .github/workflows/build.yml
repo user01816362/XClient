@@ -106,6 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           cd sdks/XKit
+          swift test
           swift run XKitCLI test-all
 
       - name: Build XKit Release
@@ -194,6 +195,7 @@ jobs:
             exit 1
           fi
           cp -r sdks/XKit/Sources "dist/XKit-${version}/"
+          cp -r sdks/XKit/Tests "dist/XKit-${version}/"
           cp sdks/XKit/Package.swift "dist/XKit-${version}/"
           cp README.md "dist/XKit-${version}/" 2>/dev/null || true
 
@@ -205,8 +207,14 @@ jobs:
             echo "::error::XClientApp binary not found in XAPP/XClient/.build (${config_lower}, ${CONFIGURATION}, *-apple-macosx/${config_lower})"
             exit 1
           fi
-          cp -r XAPP/XClient/Sources "dist/XClient-${version}/"
-          cp XAPP/XClient/Package.swift "dist/XClient-${version}/"
+          # Preserve the relative SwiftPM dependency path used by XClient.
+          mkdir -p "dist/XClient-${version}/XAPP/XClient" "dist/XClient-${version}/sdks/XKit"
+          cp -r XAPP/XClient/Sources "dist/XClient-${version}/XAPP/XClient/"
+          cp -r XAPP/XClient/Tests "dist/XClient-${version}/XAPP/XClient/"
+          cp XAPP/XClient/Package.swift "dist/XClient-${version}/XAPP/XClient/"
+          cp -r sdks/XKit/Sources "dist/XClient-${version}/sdks/XKit/"
+          cp -r sdks/XKit/Tests "dist/XClient-${version}/sdks/XKit/"
+          cp sdks/XKit/Package.swift "dist/XClient-${version}/sdks/XKit/"
 
           ( cd dist && zip -r "XClient-${version}.zip" "XClient-${version}" )
           cp "dist/XClient-${version}.zip" "dist/XClient.zip"

@@ -1,5 +1,7 @@
 # Local environment inventory
 
+> **Historical snapshot:** The checks below were made on 2026-10-15 and have not been repeated for this documentation update. The current user instruction is to use GitHub Actions and not run a local build. The workspace now contains `XAPP/X_12.38_dump/` and `XAPP/Payload/`; earlier references to a 12.33 dump describe the old snapshot, not the current directory inventory.
+
 **Checked:** 2026-10-15. Read-only inspection; no build or API request was run.
 
 ## Verified state

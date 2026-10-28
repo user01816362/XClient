@@ -61,9 +61,27 @@ public struct AdaptiveRootView: View {
         .environmentObject(navigationState)
         .environmentObject(navigationState.tabBarCoordinator)
         .environmentObject(sessionManager)
+        .alert("Account storage unavailable", isPresented: Binding(
+            get: { sessionManager.credentialStorageError != nil },
+            set: { if !$0 { sessionManager.dismissCredentialStorageError() } }
+        )) {
+            Button("OK") { sessionManager.dismissCredentialStorageError() }
+        } message: {
+            Text(sessionManager.credentialStorageError ?? "")
+        }
         .sheet(isPresented: $navigationState.isComposePresented) {
             ComposeModalHost()
                 .environmentObject(navigationState)
+        }
+        .sheet(isPresented: $navigationState.isSettingsSheetPresented) {
+            NavigationStack {
+                SettingsContainerView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { navigationState.isSettingsSheetPresented = false }
+                        }
+                    }
+            }
         }
         .sheet(isPresented: $sessionManager.isShowingAccountSwitcher) {
             AccountSwitcherView(sessionManager: sessionManager)
@@ -133,7 +151,7 @@ public struct CompactRootView: View {
                 get: { navigationState.selectedDestination },
                 set: { navigationState.selectDestination($0) }
             )) {
-                ForEach(AppDestination.allCases) { destination in
+                ForEach(AppDestination.primaryDestinations) { destination in
                     NavigationStack(path: navigationState.bindingForPath(of: destination)) {
                         DestinationContentHost(destination: destination)
                     }
@@ -202,7 +220,7 @@ public struct SidebarView: View {
             set: { if let dest = $0 { navigationState.selectDestination(dest) } }
         )) {
             Section {
-                ForEach(AppDestination.allCases) { destination in
+                ForEach(AppDestination.primaryDestinations) { destination in
                     SidebarRow(destination: destination)
                         .tag(destination)
                 }
@@ -330,7 +348,7 @@ public struct KeyboardShortcutsHandler: View {
                 .keyboardShortcut("2", modifiers: .command)
             Button("") { state.selectDestination(.profile) }
                 .keyboardShortcut("3", modifiers: .command)
-            Button("") { state.selectDestination(.settings) }
+            Button("") { state.isSettingsSheetPresented = true }
                 .keyboardShortcut("4", modifiers: .command)
             Button("") { state.isComposePresented = true }
                 .keyboardShortcut("n", modifiers: .command)
@@ -506,9 +524,21 @@ public struct ComposeModalHost: View {
     public init() {}
 
     public var body: some View {
-        ComposeView {
-            navigationState.isComposePresented = false
-            navigationState.tabBarCoordinator.triggerRefresh(for: .timeline)
+        if case .composer(_, let replyToPostId) = navigationState.presentedSheet, replyToPostId != nil {
+            NavigationStack {
+                ContentUnavailableView("Replies unavailable", systemImage: "bubble.left",
+                    description: Text("Reply posting is not available yet."))
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { navigationState.isComposePresented = false }
+                        }
+                    }
+            }
+        } else {
+            ComposeView {
+                navigationState.isComposePresented = false
+                navigationState.tabBarCoordinator.triggerRefresh(for: .timeline)
+            }
         }
     }
 }
