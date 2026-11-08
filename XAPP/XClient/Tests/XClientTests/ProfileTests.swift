@@ -346,22 +346,39 @@ struct ProfileTests {
     @MainActor
     func testScenario4_UserProfileNavigationAndSubtabFiltering() async throws {
         let provider = MockDataProvider()
+        let targetAuthor = XUser(
+            id: "usr_profile_flow_isolated",
+            name: "Profile Flow Author",
+            username: "profile_flow"
+        )
+        let targetPost = XPost(
+            id: "post_profile_flow_isolated",
+            text: "Profile flow fixture post",
+            authorId: targetAuthor.id
+        )
+        var users = provider.users
+        users[targetAuthor.id] = targetAuthor
         let service = MockClientService(
             currentUser: provider.currentUser,
-            timelinePosts: provider.timelinePosts,
-            users: provider.users
+            timelinePosts: [targetPost],
+            users: users
         )
+        MockDataProvider.shared.userProfiles.removeValue(forKey: targetAuthor.id)
+        defer { MockDataProvider.shared.userProfiles.removeValue(forKey: targetAuthor.id) }
 
         // Step 1: Initialize ViewModel for external author
-        let targetAuthorId = "usr_author_002" // Swift Core Team
-        let vm = ProfileViewModel(userId: targetAuthorId, service: service)
+        let vm = ProfileViewModel(
+            userId: targetAuthor.id,
+            service: service,
+            initialProfile: UserProfile(user: targetAuthor, followersCount: 40)
+        )
         #expect(vm.isCurrentUser == false)
 
         // Step 2: Load profile
         await vm.loadProfile()
         #expect(vm.userProfile != nil)
-        #expect(vm.userProfile?.user.id == targetAuthorId)
-        #expect(vm.userProfile?.user.username == "swift_lang")
+        #expect(vm.userProfile?.user.id == targetAuthor.id)
+        #expect(vm.userProfile?.user.username == targetAuthor.username)
 
         // Step 3: Browse posts
         #expect(vm.selectedSubtab == .posts)
@@ -382,14 +399,15 @@ struct ProfileTests {
         let initialFollowing = vm.isFollowing
         let initialFollowers = vm.followersCount
         vm.toggleFollow()
+        let expectedFollowers = max(0, initialFollowers + (initialFollowing ? -1 : 1))
         #expect(vm.isFollowing == !initialFollowing)
-        #expect(vm.followersCount == initialFollowers + 1)
+        #expect(vm.followersCount == expectedFollowers)
 
         // Step 7: Pull to refresh
         await vm.refreshProfile()
         #expect(vm.errorMessage == nil)
         #expect(vm.isFollowing == !initialFollowing)
-        #expect(vm.followersCount == initialFollowers + 1)
-        #expect(vm.userProfile?.followersCount == initialFollowers + 1)
+        #expect(vm.followersCount == expectedFollowers)
+        #expect(vm.userProfile?.followersCount == expectedFollowers)
     }
 }
