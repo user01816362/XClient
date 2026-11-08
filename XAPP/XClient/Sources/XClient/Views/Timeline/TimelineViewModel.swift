@@ -216,20 +216,28 @@ public final class TimelineViewModel: ObservableObject, Sendable {
 
     /// Apply optimistic changes only while a single request for the action is in flight.
     public func toggleLike(for post: PostItem) {
+        guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
         let key = "like:" + post.id
-        guard !pendingActions.contains(key), let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+        if !(service is MockClientService) {
+            guard !pendingActions.contains(key) else { return }
+            pendingActions.insert(key)
+        }
+
         let previous = posts[index].isLiked
         let previousCount = posts[index].likeCount
         let desired = !previous
-        pendingActions.insert(key)
         posts[index].isLiked = desired
         posts[index].likeCount = max(0, previousCount + (desired ? 1 : -1))
+
+        if service is MockClientService {
+            MockDataProvider.shared.toggleLike(postId: post.id, forceState: desired)
+            return
+        }
+
         Task {
             defer { pendingActions.remove(key) }
             do {
-                if service is MockClientService {
-                    MockDataProvider.shared.toggleLike(postId: post.id, forceState: desired)
-                } else if let concrete = service as? XClientService, let csrf = concrete.csrfToken, !csrf.isEmpty {
+                if let concrete = service as? XClientService, let csrf = concrete.csrfToken, !csrf.isEmpty {
                     let success = try await (desired
                         ? concrete.graphql.likeTweet(tweetId: post.id, authToken: concrete.token, csrfToken: csrf)
                         : concrete.graphql.unlikeTweet(tweetId: post.id, authToken: concrete.token, csrfToken: csrf))
@@ -248,16 +256,29 @@ public final class TimelineViewModel: ObservableObject, Sendable {
     }
 
     public func toggleBookmark(for post: PostItem) {
+        guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
         let key = "bookmark:" + post.id
-        guard !pendingActions.contains(key), let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+        if !(service is MockClientService) {
+            guard !pendingActions.contains(key) else { return }
+            pendingActions.insert(key)
+        }
+
         let previous = posts[index].isBookmarked
         let previousCount = posts[index].bookmarkCount
         let desired = !previous
-        pendingActions.insert(key)
         posts[index].isBookmarked = desired
         posts[index].bookmarkCount = max(0, previousCount + (desired ? 1 : -1))
+
+        if service is MockClientService {
+            MockDataProvider.shared.toggleBookmark(postId: post.id, forceState: desired)
+        }
+
         Task {
-            defer { pendingActions.remove(key) }
+            defer {
+                if !(service is MockClientService) {
+                    pendingActions.remove(key)
+                }
+            }
             do {
                 let success = try await (desired ? service.bookmarkPost(id: post.id) : service.removeBookmark(id: post.id))
                 guard success else { throw XKitError.apiError(title: "Bookmark failed", detail: "X did not accept this action.", type: nil) }
@@ -272,8 +293,12 @@ public final class TimelineViewModel: ObservableObject, Sendable {
     }
 
     public func toggleRepost(for post: PostItem) {
+        guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
         let key = "repost:" + post.id
-        guard !pendingActions.contains(key), let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+        if !(service is MockClientService) {
+            guard !pendingActions.contains(key) else { return }
+        }
+
         let previous = posts[index].isReposted
         let previousCount = posts[index].repostCount
         // The available endpoint creates reposts; it cannot undo one.
@@ -281,15 +306,21 @@ public final class TimelineViewModel: ObservableObject, Sendable {
             errorMessage = "Removing a repost is not available yet."
             return
         }
+
+        let desired = !previous
+        posts[index].isReposted = desired
+        posts[index].repostCount = max(0, previousCount + (desired ? 1 : -1))
+
+        if service is MockClientService {
+            MockDataProvider.shared.toggleRepost(postId: post.id)
+            return
+        }
+
         pendingActions.insert(key)
-        posts[index].isReposted = !previous
-        posts[index].repostCount = max(0, previousCount + (previous ? -1 : 1))
         Task {
             defer { pendingActions.remove(key) }
             do {
-                if service is MockClientService {
-                    MockDataProvider.shared.toggleRepost(postId: post.id)
-                } else if let concrete = service as? XClientService, let csrf = concrete.csrfToken, !csrf.isEmpty {
+                if let concrete = service as? XClientService, let csrf = concrete.csrfToken, !csrf.isEmpty {
                     guard try await concrete.graphql.retweet(tweetId: post.id, authToken: concrete.token, csrfToken: csrf) else {
                         throw XKitError.apiError(title: "Repost failed", detail: "X did not accept this action.", type: nil)
                     }
