@@ -1,12 +1,12 @@
 # XProject
 
-XProject contains **XClient**, a SwiftUI client, and **XKit**, its Swift networking and model packages. The project is under development: real login and private web-session requests are implemented in source, but X endpoint compatibility, UI parity, and the current working tree have not been verified end to end on iOS.
+XProject contains **XClient**, an independent native SwiftUI client, and **XKit**, its Swift networking and model packages. It is not an X.app wrapper and cannot access X.app's private account storage. The project is under development; endpoint compatibility, UI behavior, and the current working tree have not been verified end to end on iOS.
 
 ## Current status
 
-- XClient opens X's web login and checks the returned session against the authenticated account endpoint. Session persistence uses the device-only Keychain; migration and account switching still need device tests.
+- XClient still opens an isolated X web login and stores that separate session in the device-only Keychain. XKit now has a standalone OAuth PKCE flow coordinator, but onboarding does not use it yet; the X developer client ID and registered callback URI are not configured.
 - Home, post detail, profiles, search, and single text-post requests have implementations, but their private endpoint identifiers and transaction signing are not confirmed against the current live web session. A captured native request does not establish that a separate web-session request will work.
-- Settings is reached from the gear on your profile. It provides theme selection and a control for XClient's downloaded-media cache.
+- Settings is reached from the gear on your profile. Appearance uses system semantic colors with System, Light, and Dark choices; the downloaded-media cache control is also available.
 - Replies, thread/media publishing, and undo repost are not ready. Bookmarks is a placeholder; other unsupported or unverified flows remain.
 - Mock services and fixtures are used in tests and the headless smoke runner. Their success is not evidence of live X functionality.
 
@@ -38,5 +38,6 @@ The current working-tree changes have not been built or tested in CI. A successf
 - [Dump research method](Doc/DUMP_RESEARCH_METHOD.md)
 - [Agent handoff](Doc/AGENT_HANDOFF.md)
 - [Research sources](Doc/RESEARCH_SOURCES.md)
+- [Native client architecture and rebuild audit](Doc/NATIVE_XCLIENT_REBUILD_AUDIT_2026-11-08.md)
 
 The original requirements and early research plans are historical context; where they differ, the current integration status and code take precedence.

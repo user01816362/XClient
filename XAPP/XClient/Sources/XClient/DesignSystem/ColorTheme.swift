@@ -2,11 +2,16 @@
 //  ColorTheme.swift
 //  XClient
 //
-//  Semantic Color Themes, Palettes, and WCAG 2.1 Compliant Design Tokens.
+//  Native semantic appearance preferences and system color roles.
 //  100% Swift 6 strict concurrency compliance.
 //
 
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 // MARK: - AppThemePreference / ThemeMode
 
@@ -17,14 +22,17 @@ public enum AppThemePreference: String, Sendable, CaseIterable, Identifiable, Co
     case darkDim = "darkDim"
     case darkLightsOut = "darkLightsOut"
 
+    /// Choices shown to users. The older dark variants remain decodable so an
+    /// existing preference continues to mean Dark after the palette cleanup.
+    public static let selectableCases: [AppThemePreference] = [.system, .light, .darkDim]
+
     public var id: String { rawValue }
 
     public var displayName: String {
         switch self {
         case .system: return "System Default"
         case .light: return "Light"
-        case .darkDim: return "Dark Dim (Navy)"
-        case .darkLightsOut: return "Dark Lights Out (OLED Black)"
+        case .darkDim, .darkLightsOut: return "Dark"
         }
     }
 
@@ -33,7 +41,7 @@ public enum AppThemePreference: String, Sendable, CaseIterable, Identifiable, Co
         case .system: return "circle.lefthalf.filled"
         case .light: return "sun.max.fill"
         case .darkDim: return "moon.fill"
-        case .darkLightsOut: return "moon.stars.fill"
+        case .darkLightsOut: return "moon.fill"
         }
     }
 
@@ -87,7 +95,8 @@ public enum ThemeMode: String, Sendable, CaseIterable, Identifiable, Codable {
 
 // MARK: - ColorTheme (Hex Tokens Model)
 
-/// Pure Swift semantic color theme structure exposing verbatim hex values for contrast validation.
+/// Legacy reference tokens retained for the existing contrast-analysis suite.
+/// Runtime views use `ColorPalette.system`, not these fixed hex snapshots.
 public struct ColorTheme: Sendable, Equatable, Hashable {
     public let surfaceHex: String
     public let secondarySurfaceHex: String
@@ -193,14 +202,14 @@ public struct ColorPalette: Sendable, Equatable, Hashable {
         borderSubtle: Color,
         borderDefault: Color,
         borderStrong: Color,
-        accent: Color = Color(hex: 0x1D9BF0),
-        verifiedBlue: Color = Color(hex: 0x1D9BF0),
-        verifiedGold: Color = Color(hex: 0xE7A43B),
-        likeActive: Color = Color(hex: 0xF91880),
-        repostActive: Color = Color(hex: 0x00BA7C),
-        bookmarkActive: Color = Color(hex: 0x1D9BF0),
-        warning: Color = Color(hex: 0xFF9500),
-        destructive: Color = Color(hex: 0xF4212E)
+        accent: Color = .accentColor,
+        verifiedBlue: Color = .accentColor,
+        verifiedGold: Color = .orange,
+        likeActive: Color = .pink,
+        repostActive: Color = .green,
+        bookmarkActive: Color = .accentColor,
+        warning: Color = .orange,
+        destructive: Color = .red
     ) {
         self.background = background
         self.secondaryBackground = secondaryBackground
@@ -222,64 +231,74 @@ public struct ColorPalette: Sendable, Equatable, Hashable {
         self.destructive = destructive
     }
 
-    // MARK: - Static Theme Presets
+    // MARK: - Dynamic system palette
 
-    /// Light Theme Palette.
-    public static let light = ColorPalette(
-        background: Color(hex: 0xFFFFFF),
-        secondaryBackground: Color(hex: 0xF7F9F9),
-        tertiaryBackground: Color(hex: 0xEFF3F4),
-        groupedBackground: Color(hex: 0xF7F9FA),
-        textPrimary: Color(hex: 0x0F1419),
-        textSecondary: Color(hex: 0x536471),
-        textTertiary: Color(hex: 0x8F9CA7),
-        borderSubtle: Color(hex: 0xEFF3F4),
-        borderDefault: Color(hex: 0xCFD9DE),
-        borderStrong: Color(hex: 0x8B98A5)
+    /// Dynamic colors follow the active platform appearance and accessibility
+    /// contrast settings. These aliases keep existing view call sites simple;
+    /// they do not define separate app-owned color schemes.
+    public static let system = ColorPalette(
+        background: NativeSystemColor.background,
+        secondaryBackground: NativeSystemColor.secondaryBackground,
+        tertiaryBackground: NativeSystemColor.tertiaryBackground,
+        groupedBackground: NativeSystemColor.groupedBackground,
+        textPrimary: NativeSystemColor.primaryLabel,
+        textSecondary: NativeSystemColor.secondaryLabel,
+        textTertiary: NativeSystemColor.tertiaryLabel,
+        borderSubtle: NativeSystemColor.separator.opacity(0.5),
+        borderDefault: NativeSystemColor.separator,
+        borderStrong: NativeSystemColor.secondaryLabel,
+        accent: .accentColor,
+        verifiedBlue: .accentColor,
+        verifiedGold: .orange,
+        likeActive: .pink,
+        repostActive: .green,
+        bookmarkActive: .accentColor,
+        warning: .orange,
+        destructive: .red
     )
 
-    /// Dark Dim Theme Palette (Deep Navy Slate).
-    public static let darkDim = ColorPalette(
-        background: Color(hex: 0x15202B),
-        secondaryBackground: Color(hex: 0x1E2732),
-        tertiaryBackground: Color(hex: 0x22303C),
-        groupedBackground: Color(hex: 0x10171E),
-        textPrimary: Color(hex: 0xF7F9F9),
-        textSecondary: Color(hex: 0x8B98A5),
-        textTertiary: Color(hex: 0x5C6E7E),
-        borderSubtle: Color(hex: 0x273340),
-        borderDefault: Color(hex: 0x38444D),
-        borderStrong: Color(hex: 0x5C6E7E)
-    )
-
-    /// Dark Lights Out Theme Palette (Pure OLED Black).
-    /// textSecondary uses Color(hex: 0x8B98A5) guaranteeing >= 4.5:1 WCAG AA compliance on cards.
-    public static let darkLightsOut = ColorPalette(
-        background: Color(hex: 0x000000),
-        secondaryBackground: Color(hex: 0x16181C),
-        tertiaryBackground: Color(hex: 0x202327),
-        groupedBackground: Color(hex: 0x000000),
-        textPrimary: Color(hex: 0xE7E9EA),
-        textSecondary: Color(hex: 0x8B98A5),
-        textTertiary: Color(hex: 0x474B51),
-        borderSubtle: Color(hex: 0x2F3336),
-        borderDefault: Color(hex: 0x3A3E42),
-        borderStrong: Color(hex: 0x536471)
-    )
+    /// Compatibility aliases; rendered colors still come from system semantics.
+    public static let light = system
+    public static let darkDim = system
+    public static let darkLightsOut = system
 
     /// Resolves the effective palette based on preference and active system color scheme.
     public static func resolve(preference: AppThemePreference, systemScheme: ColorScheme) -> ColorPalette {
-        switch preference {
-        case .system:
-            return systemScheme == .dark ? .darkLightsOut : .light
-        case .light:
-            return .light
-        case .darkDim:
-            return .darkDim
-        case .darkLightsOut:
-            return .darkLightsOut
-        }
+        // System colors resolve dynamically inside SwiftUI. The preference
+        // controls only preferredColorScheme, never a second hand-built palette.
+        .system
     }
+}
+
+private enum NativeSystemColor {
+    #if os(iOS)
+    static let background = Color(uiColor: .systemBackground)
+    static let secondaryBackground = Color(uiColor: .secondarySystemBackground)
+    static let tertiaryBackground = Color(uiColor: .tertiarySystemBackground)
+    static let groupedBackground = Color(uiColor: .systemGroupedBackground)
+    static let primaryLabel = Color(uiColor: .label)
+    static let secondaryLabel = Color(uiColor: .secondaryLabel)
+    static let tertiaryLabel = Color(uiColor: .tertiaryLabel)
+    static let separator = Color(uiColor: .separator)
+    #elseif os(macOS)
+    static let background = Color(nsColor: .windowBackgroundColor)
+    static let secondaryBackground = Color(nsColor: .controlBackgroundColor)
+    static let tertiaryBackground = Color(nsColor: .underPageBackgroundColor)
+    static let groupedBackground = Color(nsColor: .windowBackgroundColor)
+    static let primaryLabel = Color(nsColor: .labelColor)
+    static let secondaryLabel = Color(nsColor: .secondaryLabelColor)
+    static let tertiaryLabel = Color(nsColor: .tertiaryLabelColor)
+    static let separator = Color(nsColor: .separatorColor)
+    #else
+    static let background = Color.primary.opacity(0.0001)
+    static let secondaryBackground = Color.secondary.opacity(0.08)
+    static let tertiaryBackground = Color.secondary.opacity(0.12)
+    static let groupedBackground = Color.primary.opacity(0.0001)
+    static let primaryLabel = Color.primary
+    static let secondaryLabel = Color.secondary
+    static let tertiaryLabel = Color.secondary.opacity(0.7)
+    static let separator = Color.secondary.opacity(0.35)
+    #endif
 }
 
 // MARK: - SwiftUI Environment Keys

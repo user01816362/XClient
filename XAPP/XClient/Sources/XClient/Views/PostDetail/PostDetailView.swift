@@ -65,7 +65,7 @@ public struct PostDetailView: View {
 
             // Sticky Bottom Reply Bar
             if viewModel.focalPost != nil {
-                liquidGlassReplyBar
+                nativeReplyBar
             }
         }
         .navigationTitle("Post")
@@ -337,10 +337,10 @@ public struct PostDetailView: View {
         }
     }
 
-    // MARK: - Liquid Glass Sticky Reply Bar
+    // MARK: - Native Material Sticky Reply Bar
 
     @ViewBuilder
-    private var liquidGlassReplyBar: some View {
+    private var nativeReplyBar: some View {
         HStack(spacing: 10) {
             TextField("Post your reply...", text: $viewModel.replyText)
                 .textFieldStyle(.plain)

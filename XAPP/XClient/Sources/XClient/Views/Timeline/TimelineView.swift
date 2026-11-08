@@ -172,11 +172,10 @@ public struct UnreadPillButton: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .foregroundStyle(Color.white)
+                .foregroundStyle(Color.primary)
         }
         .buttonStyle(.plain)
-        .liquidGlassCapsule(style: .prominent, intensity: 1.0)
-        .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 5)
+        .background(.regularMaterial, in: Capsule())
         .accessibilityLabel("\(count) new posts available. Tap to scroll to top and view.")
         .accessibilityAddTraits(.isButton)
     }

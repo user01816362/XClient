@@ -17,8 +17,8 @@ public struct SettingsView: View {
     public var body: some View {
         Form {
             Section("Appearance") {
-                Picker("Theme", selection: $viewModel.selectedTheme) {
-                    ForEach(AppThemePreference.allCases) { theme in
+                Picker("Appearance", selection: $viewModel.selectedTheme) {
+                    ForEach(AppThemePreference.selectableCases) { theme in
                         Text(theme.displayName).tag(theme)
                     }
                 }

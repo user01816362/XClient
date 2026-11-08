@@ -226,10 +226,10 @@ public struct AvatarImage: View {
 
     private var initialsFallbackView: some View {
         ZStack {
-            fallbackGradient
+            Circle().fill(palette.tertiaryBackground)
             Text(initials)
                 .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -245,18 +245,6 @@ public struct AvatarImage: View {
         return "?"
     }
 
-    private var fallbackGradient: LinearGradient {
-        let hash = abs(author.id.hashValue)
-        let palettes: [[Color]] = [
-            [Color(hex: 0x1D9BF0), Color(hex: 0x00BA7C)],
-            [Color(hex: 0x7856FF), Color(hex: 0x1D9BF0)],
-            [Color(hex: 0xFF7A00), Color(hex: 0xF91880)],
-            [Color(hex: 0x00BA7C), Color(hex: 0x008556)],
-            [Color(hex: 0xF91880), Color(hex: 0x7856FF)]
-        ]
-        let selected = palettes[hash % palettes.count]
-        return LinearGradient(colors: selected, startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
 }
 
 // MARK: - Verification Badge View
@@ -280,7 +268,7 @@ public struct VerificationBadgeView: View {
         case .none: return .clear
         case .blue: return palette.verifiedBlue
         case .gold: return palette.verifiedGold
-        case .gray: return Color(hexString: ColorTheme.VerificationBadge.grayHex)
+        case .gray: return palette.textSecondary
         }
     }
 

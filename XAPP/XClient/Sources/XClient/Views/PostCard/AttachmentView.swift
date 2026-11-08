@@ -137,7 +137,7 @@ public struct AttachmentView: View {
 
             // Video Play Overlay
             if item.type == .video || item.type == .animatedGif {
-                LiquidGlassPlayButton()
+                MediaPlayButton()
 
                 // Duration Pill
                 if let duration = item.durationSeconds {
@@ -239,8 +239,8 @@ public struct AttachmentView: View {
     }
 }
 
-// MARK: - Liquid Glass Play Button Overlay
-public struct LiquidGlassPlayButton: View {
+// MARK: - Native Material Play Button
+public struct MediaPlayButton: View {
     public init() {}
 
     public var body: some View {
@@ -248,14 +248,10 @@ public struct LiquidGlassPlayButton: View {
             Circle()
                 .fill(.ultraThinMaterial)
                 .frame(width: 52, height: 52)
-                .overlay(
-                    Circle().strokeBorder(Color.white.opacity(0.4), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 3)
 
             Image(systemName: "play.fill")
                 .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .offset(x: 2) // Optical center correction
         }
     }

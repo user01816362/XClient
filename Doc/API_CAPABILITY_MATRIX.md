@@ -45,7 +45,7 @@ X’s docs index currently lists official Python and TypeScript XDKs. Its tools 
 
 ## Official API and policy gate
 
-X’s current Developer Guidelines explicitly ask whether an app uses only the official API and say scraping/browser automation is prohibited. XKit and XClient therefore use documented official API calls only. Static app analysis may help describe product gaps, but cannot be used to fill those gaps with scraping or unapproved private calls. Review the current [Developer Guidelines](https://docs.x.com/developer-guidelines) and linked Developer Agreement before implementation and each release.
+X’s current Developer Guidelines explicitly ask whether an app uses only the official API and say scraping/browser automation is prohibited. The repository does **not** currently meet an official-API-only implementation: it contains experimental private web-session and GraphQL code, whose behavior is unverified. The supported rebuild path should use documented endpoints only; static app analysis does not validate private calls or make them stable. Review the current [Developer Guidelines](https://docs.x.com/developer-guidelines) and linked Developer Agreement before implementation and each release.
 
 Community GitHub clients may help locate endpoint examples, but they are not evidence that an endpoint is official, supported, permitted, or current. Record repository owner, last commit, license, tested API date, authentication method, and policy fit before using them.
 

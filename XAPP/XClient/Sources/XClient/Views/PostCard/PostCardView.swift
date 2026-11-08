@@ -123,7 +123,7 @@ public struct PostCardView: View {
             )
         }
         .padding(14)
-        .liquidGlassStandard(cornerRadius: 16)
+        .cardBackground(cornerRadius: 16)
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onTapGesture {
             onSelectPost?(post.id)
