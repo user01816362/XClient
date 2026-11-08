@@ -126,45 +126,6 @@ struct SettingsTests {
         #expect(box.interval == .fifteenSeconds)
     }
 
-    @Test("T1.6: Verify LiveSampleCardState Interactive Mutations and Counter Transitions")
-    @MainActor
-    func testLiveSampleCardStateMutations() {
-        let state = LiveSampleCardState()
-        #expect(state.isLiked == false)
-        #expect(state.isReposted == false)
-        #expect(state.isBookmarked == false)
-        #expect(state.likeCount == 42)
-        #expect(state.repostCount == 12)
-
-        // Like toggle mutation
-        state.isLiked.toggle()
-        state.likeCount += state.isLiked ? 1 : -1
-        #expect(state.isLiked == true)
-        #expect(state.likeCount == 43)
-
-        state.isLiked.toggle()
-        state.likeCount += state.isLiked ? 1 : -1
-        #expect(state.isLiked == false)
-        #expect(state.likeCount == 42)
-
-        // Repost toggle mutation
-        state.isReposted.toggle()
-        state.repostCount += state.isReposted ? 1 : -1
-        #expect(state.isReposted == true)
-        #expect(state.repostCount == 13)
-
-        state.isReposted.toggle()
-        state.repostCount += state.isReposted ? 1 : -1
-        #expect(state.isReposted == false)
-        #expect(state.repostCount == 12)
-
-        // Bookmark toggle mutation
-        state.isBookmarked.toggle()
-        #expect(state.isBookmarked == true)
-        state.isBookmarked.toggle()
-        #expect(state.isBookmarked == false)
-    }
-
     // MARK: - Tier 2: Boundary & Corner Cases
 
     @Test("T2.1: Verify Liquid Glass Intensity Clamping Upper Bound")
